@@ -31,6 +31,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 * `jj split` has gained a `--message` option to set the description of the
   commit with the selected changes.
 
+* Added support `revsets.push` which allows you to customize the default
+  set of commits to push. See issue
+  [#3650](https://github.com/jj-vcs/jj/issues/3650).
+
 ### Fixed bugs
 
 ### Packaging changes
