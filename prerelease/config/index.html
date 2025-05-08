@@ -3442,9 +3442,14 @@ keys can be supplied here, the first key is the most significant.</p>
 <p>When the <code>--sort</code> option is used with <code>jj bookmark list</code>, the configuration
 is ignored.</p>
 <h3 id="commit-trailers">Commit trailers<a class="headerlink" href="#commit-trailers" title="Permanent link">&para;</a></h3>
-<p>You can configure automatic addition of trailers to commit descriptions using
-the <code>commit_trailers</code> template. Trailers defined in this template will only be
-added if they are not already present in the description.</p>
+<p>You can configure automatic addition of one or more trailers to commit
+descriptions using the <code>commit_trailers</code> template.</p>
+<p>Each line of the template is an individual trailer, usually in <code>Key: Value</code>
+format.</p>
+<p>Trailers defined in this template are deduplicated with the existing
+description: if the entire line of a trailer is already present, it will not be
+added again. To deduplicate based only on the trailer key, use the
+<code>trailers.contains_key(key)</code> method within the template.</p>
 <div class="highlight"><pre><span></span><code><span class="k">[templates]</span>
 <span class="n">commit_trailers</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s1">&#39;&#39;&#39;</span>
 <span class="s1">format_signed_off_by_trailer(self)</span>
@@ -3453,12 +3458,10 @@ added if they are not already present in the description.</p>
 <p>Some ready-to-use trailer templates are available for frequently used trailers:</p>
 <ul>
 <li><code>format_signed_off_by_trailer(commit)</code> creates a "Signed-off-by" trailer
-  using the committer info;</li>
+  using the committer info.</li>
 <li><code>format_gerrit_change_id_trailer(commit)</code> creates a "Change-Id" trailer
   suitable to be used with Gerrit. It is based Jujutsu's change id.</li>
 </ul>
-<p>The <code>trailers.contains_key(key)</code> method can be used within the template to
-conditionally add a trailer if no other trailer with the same key exists.</p>
 <p>Existing trailers are also accessible via <code>commit.trailers()</code>.</p>
 <h3 id="diff-colors-and-styles">Diff colors and styles<a class="headerlink" href="#diff-colors-and-styles" title="Permanent link">&para;</a></h3>
 <p>In color-words and git diffs, word-level hunks are rendered with underline. You
