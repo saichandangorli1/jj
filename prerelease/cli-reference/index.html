@@ -7200,8 +7200,9 @@ Martin von Zweigbergk</p>
 </ul>
 <h2 id="jj-diff"><code>jj diff</code><a class="headerlink" href="#jj-diff" title="Permanent link">&para;</a></h2>
 <p>Compare file contents between two revisions</p>
-<p>With the <code>-r</code> option, which is the default, shows the changes compared to the parent revision. If there are several parent revisions (i.e., the given revision is a merge), then they will be merged and the changes from the result to the given revision will be shown.</p>
+<p>With the <code>-r</code> option, shows the changes compared to the parent revision. If there are several parent revisions (i.e., the given revision is a merge), then they will be merged and the changes from the result to the given revision will be shown.</p>
 <p>With the <code>--from</code> and/or <code>--to</code> options, shows the difference from/to the given revisions. If either is left out, it defaults to the working-copy commit. For example, <code>jj diff --from main</code> shows the changes from "main" (perhaps a bookmark name) to the working-copy commit.</p>
+<p>If no option is specified, it defaults to <code>-r @</code>.</p>
 <p><strong>Usage:</strong> <code>jj diff [OPTIONS] [FILESETS]...</code></p>
 <h6 id="arguments_17"><strong>Arguments:</strong><a class="headerlink" href="#arguments_17" title="Permanent link">&para;</a></h6>
 <ul>
@@ -7213,12 +7214,19 @@ Martin von Zweigbergk</p>
 <p><code>-r</code>, <code>--revisions &lt;REVSETS&gt;</code> — Show changes in these revisions</p>
 <p>If there are multiple revisions, then then total diff for all of them will be shown. For example, if you have a linear chain of revisions A..D, then <code>jj diff -r B::D</code> equals <code>jj diff --from A --to D</code>. Multiple heads and/or roots are supported, but gaps in the revset are not supported (e.g. <code>jj diff -r 'A|C'</code> in a linear chain A..C).</p>
 <p>If a revision is a merge commit, this shows changes <em>from</em> the automatic merge of the contents of all of its parents <em>to</em> the contents of the revision itself.</p>
+<p>If none of <code>-r</code>, <code>-f</code>, or <code>-t</code> is provided, then the default is <code>-r @</code>.</p>
 </li>
 <li>
 <p><code>-f</code>, <code>--from &lt;REVSET&gt;</code> — Show changes from this revision</p>
+<p>If none of <code>-r</code>, <code>-f</code>, or <code>-t</code> is provided, then the default is <code>-r @</code>.</p>
 </li>
-<li><code>-t</code>, <code>--to &lt;REVSET&gt;</code> — Show changes to this revision</li>
-<li><code>-s</code>, <code>--summary</code> — For each path, show only whether it was modified, added, or deleted</li>
+<li>
+<p><code>-t</code>, <code>--to &lt;REVSET&gt;</code> — Show changes to this revision</p>
+<p>If none of <code>-r</code>, <code>-f</code>, or <code>-t</code> is provided, then the default is <code>-r @</code>.</p>
+</li>
+<li>
+<p><code>-s</code>, <code>--summary</code> — For each path, show only whether it was modified, added, or deleted</p>
+</li>
 <li><code>--stat</code> — Show a histogram of the changes</li>
 <li>
 <p><code>--types</code> — For each path, show only its type before and after</p>
@@ -7239,7 +7247,7 @@ Martin von Zweigbergk</p>
 </ul>
 <h2 id="jj-diffedit"><code>jj diffedit</code><a class="headerlink" href="#jj-diffedit" title="Permanent link">&para;</a></h2>
 <p>Touch up the content changes in a revision with a diff editor</p>
-<p>With the <code>-r</code> option, which is the default, starts a <a href="https://jj-vcs.github.io/jj/latest/config/#editing-diffs">diff editor</a> on the changes in the revision.</p>
+<p>With the <code>-r</code> option, starts a <a href="https://jj-vcs.github.io/jj/latest/config/#editing-diffs">diff editor</a> on the changes in the revision.</p>
 <p>With the <code>--from</code> and/or <code>--to</code> options, starts a <a href="https://jj-vcs.github.io/jj/latest/config/#editing-diffs">diff editor</a> comparing the "from" revision to the "to" revision.</p>
 <p>Edit the right side of the diff until it looks the way you want. Once you close the editor, the revision specified with <code>-r</code> or <code>--to</code> will be updated. Unless <code>--restore-descendants</code> is used, descendants will be rebased on top as usual, which may result in conflicts.</p>
 <p>See <code>jj restore</code> if you want to move entire files from one revision to another. For moving changes between revisions, see <code>jj squash -i</code>.</p>
