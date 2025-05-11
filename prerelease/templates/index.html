@@ -968,9 +968,9 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#list-type_1" class="md-nav__link">
+  <a href="#listtrailer-type" class="md-nav__link">
     <span class="md-ellipsis">
-      List type
+      List&lt;Trailer&gt; type
     </span>
   </a>
   
@@ -2060,9 +2060,9 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#list-type_1" class="md-nav__link">
+  <a href="#listtrailer-type" class="md-nav__link">
     <span class="md-ellipsis">
-      List type
+      List&lt;Trailer&gt; type
     </span>
   </a>
   
@@ -2353,7 +2353,7 @@ type</a> are available as keywords. For example,
 <li><code>config(name: String) -&gt; ConfigValue</code>: Look up configuration value by <code>name</code>.</li>
 </ul>
 <h2 id="types">Types<a class="headerlink" href="#types" title="Permanent link">&para;</a></h2>
-<h3 id="annotationline-type">AnnotationLine type<a class="headerlink" href="#annotationline-type" title="Permanent link">&para;</a></h3>
+<h3 id="annotationline-type"><code>AnnotationLine</code> type<a class="headerlink" href="#annotationline-type" title="Permanent link">&para;</a></h3>
 <p>The following methods are defined.</p>
 <ul>
 <li><code>.commit() -&gt; Commit</code>: Commit responsible for changing the relevant line.</li>
@@ -2362,9 +2362,9 @@ type</a> are available as keywords. For example,
 <li><code>.first_line_in_hunk() -&gt; Boolean</code>: False when the directly preceding line
   references the same commit.</li>
 </ul>
-<h3 id="boolean-type">Boolean type<a class="headerlink" href="#boolean-type" title="Permanent link">&para;</a></h3>
+<h3 id="boolean-type"><code>Boolean</code> type<a class="headerlink" href="#boolean-type" title="Permanent link">&para;</a></h3>
 <p>No methods are defined. Can be constructed with <code>false</code> or <code>true</code> literal.</p>
-<h3 id="commit-type">Commit type<a class="headerlink" href="#commit-type" title="Permanent link">&para;</a></h3>
+<h3 id="commit-type"><code>Commit</code> type<a class="headerlink" href="#commit-type" title="Permanent link">&para;</a></h3>
 <p>This type cannot be printed. The following methods are defined.</p>
 <ul>
 <li><code>.description() -&gt; String</code></li>
@@ -2404,7 +2404,7 @@ type</a> are available as keywords. For example,
   likely to change in future version to respect the command line path arguments.</li>
 <li><code>.root() -&gt; Boolean</code>: True if the commit is the root commit.</li>
 </ul>
-<h3 id="commitid-changeid-type">CommitId / ChangeId type<a class="headerlink" href="#commitid-changeid-type" title="Permanent link">&para;</a></h3>
+<h3 id="commitid-changeid-type"><code>CommitId</code> / <code>ChangeId</code> type<a class="headerlink" href="#commitid-changeid-type" title="Permanent link">&para;</a></h3>
 <p>The following methods are defined.</p>
 <ul>
 <li><code>.normal_hex() -&gt; String</code>: Normal hex representation (0-9a-f), useful for
@@ -2412,7 +2412,7 @@ type</a> are available as keywords. For example,
 <li><code>.short([len: Integer]) -&gt; String</code></li>
 <li><code>.shortest([min_len: Integer]) -&gt; ShortestIdPrefix</code>: Shortest unique prefix.</li>
 </ul>
-<h3 id="commitref-type">CommitRef type<a class="headerlink" href="#commitref-type" title="Permanent link">&para;</a></h3>
+<h3 id="commitref-type"><code>CommitRef</code> type<a class="headerlink" href="#commitref-type" title="Permanent link">&para;</a></h3>
 <p>The following methods are defined.</p>
 <ul>
 <li><code>.name() -&gt; String</code>: Local bookmark or tag name.</li>
@@ -2434,7 +2434,7 @@ type</a> are available as keywords. For example,
 <li><code>.tracking_behind_count() -&gt; SizeHint</code>: Number of commits behind of the
   tracking local ref.</li>
 </ul>
-<h3 id="configvalue-type">ConfigValue type<a class="headerlink" href="#configvalue-type" title="Permanent link">&para;</a></h3>
+<h3 id="configvalue-type"><code>ConfigValue</code> type<a class="headerlink" href="#configvalue-type" title="Permanent link">&para;</a></h3>
 <p>This type can be printed in TOML syntax. The following methods are defined.</p>
 <ul>
 <li><code>.as_boolean() -&gt; Boolean</code>: Extract boolean.</li>
@@ -2443,7 +2443,7 @@ type</a> are available as keywords. For example,
   value (e.g. integer) to string.</li>
 <li><code>.as_string_list() -&gt; List&lt;String&gt;</code>: Extract list of strings.</li>
 </ul>
-<h3 id="cryptographicsignature-type">CryptographicSignature type<a class="headerlink" href="#cryptographicsignature-type" title="Permanent link">&para;</a></h3>
+<h3 id="cryptographicsignature-type"><code>CryptographicSignature</code> type<a class="headerlink" href="#cryptographicsignature-type" title="Permanent link">&para;</a></h3>
 <p>The following methods are defined.</p>
 <ul>
 <li><code>.status() -&gt; String</code>: The signature's status (<code>"good"</code>, <code>"bad"</code>, <code>"unknown"</code>, <code>"invalid"</code>).</li>
@@ -2464,14 +2464,14 @@ checking for signature presence through boolean coercion is fast:
 <div class="highlight"><pre><span></span><code>if(commit.signature(), &quot;commit has a signature&quot;, &quot;commit is unsigned&quot;)
 </code></pre></div></p>
 </div>
-<h3 id="diffstats-type">DiffStats type<a class="headerlink" href="#diffstats-type" title="Permanent link">&para;</a></h3>
+<h3 id="diffstats-type"><code>DiffStats</code> type<a class="headerlink" href="#diffstats-type" title="Permanent link">&para;</a></h3>
 <p>This type can be printed as a histogram of the changes. The following methods
 are defined.</p>
 <ul>
 <li><code>.total_added() -&gt; Integer</code>: Total number of insertions.</li>
 <li><code>.total_removed() -&gt; Integer</code>: Total number of deletions.</li>
 </ul>
-<h3 id="email-type">Email type<a class="headerlink" href="#email-type" title="Permanent link">&para;</a></h3>
+<h3 id="email-type"><code>Email</code> type<a class="headerlink" href="#email-type" title="Permanent link">&para;</a></h3>
 <p>The email field of a signature may or may not look like an email address. It may
 be empty, may not contain the symbol <code>@</code>, and could in principle contain
 multiple <code>@</code>s.</p>
@@ -2482,9 +2482,9 @@ multiple <code>@</code>s.</p>
 <li><code>.domain() -&gt; String</code>: the part of the email after the first <code>@</code> or the empty
   string.</li>
 </ul>
-<h3 id="integer-type">Integer type<a class="headerlink" href="#integer-type" title="Permanent link">&para;</a></h3>
+<h3 id="integer-type"><code>Integer</code> type<a class="headerlink" href="#integer-type" title="Permanent link">&para;</a></h3>
 <p>No methods are defined.</p>
-<h3 id="list-type">List type<a class="headerlink" href="#list-type" title="Permanent link">&para;</a></h3>
+<h3 id="list-type"><code>List</code> type<a class="headerlink" href="#list-type" title="Permanent link">&para;</a></h3>
 <p>A list can be implicitly converted to <code>Boolean</code>. The following methods are
 defined.</p>
 <ul>
@@ -2496,18 +2496,18 @@ defined.</p>
 <li><code>.map(|item| expression) -&gt; ListTemplate</code>: Apply template <code>expression</code>
   to each element. Example: <code>parents.map(|c| c.commit_id().short())</code></li>
 </ul>
-<h3 id="list-type_1">List<Trailer> type<a class="headerlink" href="#list-type_1" title="Permanent link">&para;</a></h3>
+<h3 id="listtrailer-type"><code>List&lt;Trailer&gt;</code> type<a class="headerlink" href="#listtrailer-type" title="Permanent link">&para;</a></h3>
 <p>The following methods are defined. See also the <code>List</code> type.</p>
 <ul>
 <li><code>.contains_key(key: Template) -&gt; Boolean</code>: True if the commit description
   contains at least one trailer with the key <code>key</code>.</li>
 </ul>
-<h3 id="listtemplate-type">ListTemplate type<a class="headerlink" href="#listtemplate-type" title="Permanent link">&para;</a></h3>
+<h3 id="listtemplate-type"><code>ListTemplate</code> type<a class="headerlink" href="#listtemplate-type" title="Permanent link">&para;</a></h3>
 <p>The following methods are defined. See also the <code>List</code> type.</p>
 <ul>
 <li><code>.join(separator: Template) -&gt; Template</code></li>
 </ul>
-<h3 id="operation-type">Operation type<a class="headerlink" href="#operation-type" title="Permanent link">&para;</a></h3>
+<h3 id="operation-type"><code>Operation</code> type<a class="headerlink" href="#operation-type" title="Permanent link">&para;</a></h3>
 <p>This type cannot be printed. The following methods are defined.</p>
 <ul>
 <li><code>.current_operation() -&gt; Boolean</code></li>
@@ -2519,16 +2519,16 @@ defined.</p>
 <li><code>.snapshot() -&gt; Boolean</code>: True if the operation is a snapshot operation.</li>
 <li><code>.root() -&gt; Boolean</code>: True if the operation is the root operation.</li>
 </ul>
-<h3 id="operationid-type">OperationId type<a class="headerlink" href="#operationid-type" title="Permanent link">&para;</a></h3>
+<h3 id="operationid-type"><code>OperationId</code> type<a class="headerlink" href="#operationid-type" title="Permanent link">&para;</a></h3>
 <p>The following methods are defined.</p>
 <ul>
 <li><code>.short([len: Integer]) -&gt; String</code></li>
 </ul>
-<h3 id="option-type">Option type<a class="headerlink" href="#option-type" title="Permanent link">&para;</a></h3>
+<h3 id="option-type"><code>Option</code> type<a class="headerlink" href="#option-type" title="Permanent link">&para;</a></h3>
 <p>An option can be implicitly converted to <code>Boolean</code> denoting whether the
 contained value is set. If set, all methods of the contained value can be
 invoked. If not set, an error will be reported inline on method call.</p>
-<h3 id="repopath-type">RepoPath type<a class="headerlink" href="#repopath-type" title="Permanent link">&para;</a></h3>
+<h3 id="repopath-type"><code>RepoPath</code> type<a class="headerlink" href="#repopath-type" title="Permanent link">&para;</a></h3>
 <p>A slash-separated path relative to the repository root. The following methods
 are defined.</p>
 <ul>
@@ -2536,7 +2536,7 @@ are defined.</p>
   platform-native separator, and is relative to the current working directory.</li>
 <li><code>.parent() -&gt; Option&lt;RepoPath&gt;</code>: Parent directory path.</li>
 </ul>
-<h3 id="shortestidprefix-type">ShortestIdPrefix type<a class="headerlink" href="#shortestidprefix-type" title="Permanent link">&para;</a></h3>
+<h3 id="shortestidprefix-type"><code>ShortestIdPrefix</code> type<a class="headerlink" href="#shortestidprefix-type" title="Permanent link">&para;</a></h3>
 <p>The following methods are defined.</p>
 <ul>
 <li><code>.prefix() -&gt; String</code></li>
@@ -2544,14 +2544,14 @@ are defined.</p>
 <li><code>.upper() -&gt; ShortestIdPrefix</code></li>
 <li><code>.lower() -&gt; ShortestIdPrefix</code></li>
 </ul>
-<h3 id="signature-type">Signature type<a class="headerlink" href="#signature-type" title="Permanent link">&para;</a></h3>
+<h3 id="signature-type"><code>Signature</code> type<a class="headerlink" href="#signature-type" title="Permanent link">&para;</a></h3>
 <p>The following methods are defined.</p>
 <ul>
 <li><code>.name() -&gt; String</code></li>
 <li><code>.email() -&gt; Email</code></li>
 <li><code>.timestamp() -&gt; Timestamp</code></li>
 </ul>
-<h3 id="sizehint-type">SizeHint type<a class="headerlink" href="#sizehint-type" title="Permanent link">&para;</a></h3>
+<h3 id="sizehint-type"><code>SizeHint</code> type<a class="headerlink" href="#sizehint-type" title="Permanent link">&para;</a></h3>
 <p>This type cannot be printed. The following methods are defined.</p>
 <ul>
 <li><code>.lower() -&gt; Integer</code>: Lower bound.</li>
@@ -2560,7 +2560,7 @@ are defined.</p>
   equals to the lower bound.</li>
 <li><code>.zero() -&gt; Boolean</code>: True if upper bound is known and is <code>0</code>.</li>
 </ul>
-<h3 id="string-type">String type<a class="headerlink" href="#string-type" title="Permanent link">&para;</a></h3>
+<h3 id="string-type"><code>String</code> type<a class="headerlink" href="#string-type" title="Permanent link">&para;</a></h3>
 <p>A string can be implicitly converted to <code>Boolean</code>. The following methods are
 defined.</p>
 <ul>
@@ -2603,9 +2603,9 @@ inside a string literal, with two exceptions: unescaped <code>"</code>-s and use
 that don't form a valid escape sequence.</p>
 <p>A single-quoted string literal has no escape syntax. <code>'</code> can't be expressed
 inside a single-quoted string literal.</p>
-<h3 id="template-type">Template type<a class="headerlink" href="#template-type" title="Permanent link">&para;</a></h3>
+<h3 id="template-type"><code>Template</code> type<a class="headerlink" href="#template-type" title="Permanent link">&para;</a></h3>
 <p>Most types can be implicitly converted to <code>Template</code>. No methods are defined.</p>
-<h3 id="timestamp-type">Timestamp type<a class="headerlink" href="#timestamp-type" title="Permanent link">&para;</a></h3>
+<h3 id="timestamp-type"><code>Timestamp</code> type<a class="headerlink" href="#timestamp-type" title="Permanent link">&para;</a></h3>
 <p>The following methods are defined.</p>
 <ul>
 <li><code>.ago() -&gt; String</code>: Format as relative timestamp.</li>
@@ -2616,20 +2616,20 @@ inside a single-quoted string literal.</p>
 <li><code>.after(date: String) -&gt; Boolean</code>: True if the timestamp is exactly at or after the given date.</li>
 <li><code>.before(date: String) -&gt; Boolean</code>: True if the timestamp is before, but not including, the given date.</li>
 </ul>
-<h3 id="timestamprange-type">TimestampRange type<a class="headerlink" href="#timestamprange-type" title="Permanent link">&para;</a></h3>
+<h3 id="timestamprange-type"><code>TimestampRange</code> type<a class="headerlink" href="#timestamprange-type" title="Permanent link">&para;</a></h3>
 <p>The following methods are defined.</p>
 <ul>
 <li><code>.start() -&gt; Timestamp</code></li>
 <li><code>.end() -&gt; Timestamp</code></li>
 <li><code>.duration() -&gt; String</code></li>
 </ul>
-<h3 id="trailer-type">Trailer type<a class="headerlink" href="#trailer-type" title="Permanent link">&para;</a></h3>
+<h3 id="trailer-type"><code>Trailer</code> type<a class="headerlink" href="#trailer-type" title="Permanent link">&para;</a></h3>
 <p>The following methods are defined.</p>
 <ul>
 <li><code>.key() -&gt; String</code></li>
 <li><code>.value() -&gt; String</code></li>
 </ul>
-<h3 id="treediff-type">TreeDiff type<a class="headerlink" href="#treediff-type" title="Permanent link">&para;</a></h3>
+<h3 id="treediff-type"><code>TreeDiff</code> type<a class="headerlink" href="#treediff-type" title="Permanent link">&para;</a></h3>
 <p>This type cannot be printed. The following methods are defined.</p>
 <ul>
 <li><code>.files() -&gt; List&lt;TreeDiffEntry&gt;</code>: Changed files.</li>
@@ -2639,7 +2639,7 @@ inside a single-quoted string literal.</p>
 <li><code>.stat([width: Integer]) -&gt; DiffStats</code>: Calculate stats of changed lines.</li>
 <li><code>.summary() -&gt; Template</code>: Format as a list of status code and path pairs.</li>
 </ul>
-<h3 id="treediffentry-type">TreeDiffEntry type<a class="headerlink" href="#treediffentry-type" title="Permanent link">&para;</a></h3>
+<h3 id="treediffentry-type"><code>TreeDiffEntry</code> type<a class="headerlink" href="#treediffentry-type" title="Permanent link">&para;</a></h3>
 <p>This type cannot be printed. The following methods are defined.</p>
 <ul>
 <li><code>.path() -&gt; RepoPath</code>: Path to the entry. If the entry is a copy/rename, this
@@ -2649,7 +2649,7 @@ inside a single-quoted string literal.</p>
 <li><code>.source() -&gt; TreeEntry</code>: The source (or left) entry.</li>
 <li><code>.target() -&gt; TreeEntry</code>: The target (or right) entry.</li>
 </ul>
-<h3 id="treeentry-type">TreeEntry type<a class="headerlink" href="#treeentry-type" title="Permanent link">&para;</a></h3>
+<h3 id="treeentry-type"><code>TreeEntry</code> type<a class="headerlink" href="#treeentry-type" title="Permanent link">&para;</a></h3>
 <p>This type cannot be printed. The following methods are defined.</p>
 <ul>
 <li><code>.path() -&gt; RepoPath</code>: Path to the entry.</li>
