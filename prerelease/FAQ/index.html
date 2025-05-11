@@ -2402,12 +2402,21 @@ correct commit using <code>jj bookmark move &lt;name&gt; --to &lt;commit ID&gt;<
 appear in the log, but if they don't you can use <code>jj bookmark list</code>to show all the
 commits associated with it.</p>
 <h3 id="how-do-i-integrate-jujutsu-with-gerrit">How do I integrate Jujutsu with Gerrit?<a class="headerlink" href="#how-do-i-integrate-jujutsu-with-gerrit" title="Permanent link">&para;</a></h3>
-<p>At the moment you'll need a script, which adds the required fields for Gerrit
-like the <code>Change-Id</code> footer. Then <code>jj</code> can invoke it via an <code>$EDITOR</code> override
-in an aliased command. Here's an <a href="https://gist.github.com/thoughtpolice/8f2fd36ae17cd11b8e7bd93a70e31ad6">example</a> from a
-contributor (look for the <code>jj signoff</code> alias).</p>
-<p>After you have attached the <code>Change-Id:</code> footer to the commit series, you'll
-have to manually invoke <code>git push</code> of <code>HEAD</code> on the underlying git repository
+<p>Add this to your configuration to automatically add Change-Id trailers to commit messages:
+<div class="highlight"><pre><span></span><code><span class="k">[templates]</span>
+<span class="n">commit_trailers</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s1">&#39;&#39;&#39;</span>
+<span class="s1">if(</span>
+<span class="s1">  !trailers.contains_key(&quot;Change-Id&quot;),</span>
+<span class="s1">  format_gerrit_change_id_trailer(self)</span>
+<span class="s1">)</span>
+<span class="s1">&#39;&#39;&#39;</span>
+</code></pre></div>
+Note: If you don't check for the presence of the "Change-Id" trailer, you might
+occasionally get duplicate trailers.
+This happens when Jujutsu's change-id isn't in sync with the "Change-Id" trailer.
+Eg. after <code>jj split</code>, the "Change-Id" trailer generated for the new change would
+be different from the original one, it wouldn't be deduplicated.</p>
+<p>You'll have to manually invoke <code>git push</code> of <code>HEAD</code> on the underlying git repository
 into the remote Gerrit bookmark <code>refs/for/$BRANCH</code>, where <code>$BRANCH</code> is the base
 bookmark you want your changes to go to (e.g., <code>git push origin
 HEAD:refs/for/main</code>). Using a <a href="../glossary/#co-located-repos">co-located</a> repo
