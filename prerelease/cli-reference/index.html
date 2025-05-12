@@ -8225,7 +8225,7 @@ which revisions to rebase where.</p>
 revision. This is true in general; it is not specific to this command.</p>
 <h3 id="specifying-which-revisions-to-rebase">Specifying which revisions to rebase<a class="headerlink" href="#specifying-which-revisions-to-rebase" title="Permanent link">&para;</a></h3>
 <p>With <code>--source/-s</code>, the command rebases the specified revision and its
-descendants onto the destination. For example, <code>jj rebase -s M -d O</code> would
+descendants to the destination. For example, <code>jj rebase -s M -d O</code> would
 transform your history like this (letters followed by an apostrophe are
 post-rebase versions):</p>
 <div class="highlight"><pre><span></span><code>O           N&#39;
@@ -8268,7 +8268,7 @@ same "branch", relative to the destination):</p>
 |/          |
 J           J
 </code></pre></div>
-<p>With <code>--revisions/-r</code>, the command rebases only the specified revisions onto
+<p>With <code>--revisions/-r</code>, the command rebases only the specified revisions to
 the destination. Any "hole" left behind will be filled by rebasing
 descendants onto the specified revisions' parent(s). For example,
 <code>jj rebase -r K -d M</code> would transform your history like this:</p>
