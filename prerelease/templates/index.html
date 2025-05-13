@@ -2528,6 +2528,8 @@ defined.</p>
 <p>An option can be implicitly converted to <code>Boolean</code> denoting whether the
 contained value is set. If set, all methods of the contained value can be
 invoked. If not set, an error will be reported inline on method call.</p>
+<p>On comparison between two optional values or optional and non-optional values,
+unset value is not an error. Unset value is considered less than any set values.</p>
 <h3 id="repopath-type"><code>RepoPath</code> type<a class="headerlink" href="#repopath-type" title="Permanent link">&para;</a></h3>
 <p>A slash-separated path relative to the repository root. The following methods
 are defined.</p>
@@ -2558,7 +2560,8 @@ are defined.</p>
 <li><code>.upper() -&gt; Option&lt;Integer&gt;</code>: Upper bound if known.</li>
 <li><code>.exact() -&gt; Option&lt;Integer&gt;</code>: Exact value if upper bound is known and it
   equals to the lower bound.</li>
-<li><code>.zero() -&gt; Boolean</code>: True if upper bound is known and is <code>0</code>.</li>
+<li><code>.zero() -&gt; Boolean</code>: True if upper bound is known and is <code>0</code>. Equivalent to
+  <code>.upper() == 0</code>.</li>
 </ul>
 <h3 id="string-type"><code>String</code> type<a class="headerlink" href="#string-type" title="Permanent link">&para;</a></h3>
 <p>A string can be implicitly converted to <code>Boolean</code>. The following methods are
