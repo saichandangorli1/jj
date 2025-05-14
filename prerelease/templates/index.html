@@ -1013,6 +1013,15 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#refsymbol-type" class="md-nav__link">
+    <span class="md-ellipsis">
+      RefSymbol type
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#repopath-type" class="md-nav__link">
     <span class="md-ellipsis">
       RepoPath type
@@ -2105,6 +2114,15 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#refsymbol-type" class="md-nav__link">
+    <span class="md-ellipsis">
+      RefSymbol type
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#repopath-type" class="md-nav__link">
     <span class="md-ellipsis">
       RepoPath type
@@ -2415,8 +2433,8 @@ type</a> are available as keywords. For example,
 <h3 id="commitref-type"><code>CommitRef</code> type<a class="headerlink" href="#commitref-type" title="Permanent link">&para;</a></h3>
 <p>The following methods are defined.</p>
 <ul>
-<li><code>.name() -&gt; String</code>: Local bookmark or tag name.</li>
-<li><code>.remote() -&gt; String</code>: Remote name or empty if this is a local ref.</li>
+<li><code>.name() -&gt; RefSymbol</code>: Local bookmark or tag name.</li>
+<li><code>.remote() -&gt; Option&lt;RefSymbol&gt;</code>: Remote name if this is a remote ref.</li>
 <li><code>.present() -&gt; Boolean</code>: True if the ref points to any commit.</li>
 <li><code>.conflict() -&gt; Boolean</code>: True if <a href="../bookmarks/#conflicts">the bookmark or tag is
   conflicted</a>.</li>
@@ -2530,6 +2548,10 @@ contained value is set. If set, all methods of the contained value can be
 invoked. If not set, an error will be reported inline on method call.</p>
 <p>On comparison between two optional values or optional and non-optional values,
 unset value is not an error. Unset value is considered less than any set values.</p>
+<h3 id="refsymbol-type"><code>RefSymbol</code> type<a class="headerlink" href="#refsymbol-type" title="Permanent link">&para;</a></h3>
+<p><a href="#string-type">A <code>String</code> type</a>, but is formatted as revset symbol by quoting
+and escaping if necessary. Unlike strings, this cannot be implicitly converted
+to <code>Boolean</code>.</p>
 <h3 id="repopath-type"><code>RepoPath</code> type<a class="headerlink" href="#repopath-type" title="Permanent link">&para;</a></h3>
 <p>A slash-separated path relative to the repository root. The following methods
 are defined.</p>
