@@ -16,13 +16,13 @@
 
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::slice;
 use std::sync::Arc;
 
 use futures::StreamExt as _;
 use indexmap::IndexMap;
 use indexmap::IndexSet;
 use itertools::Itertools as _;
-use pollster::FutureExt as _;
 use tracing::instrument;
 
 use crate::backend::BackendError;
@@ -87,7 +87,7 @@ pub fn merge_commit_trees_no_resolve_without_repo(
 }
 
 /// Restore matching paths from the source into the destination.
-pub fn restore_tree(
+pub async fn restore_tree(
     source: &MergedTree,
     destination: &MergedTree,
     matcher: &dyn Matcher,
@@ -99,20 +99,16 @@ pub fn restore_tree(
         // TODO: We should be able to not traverse deeper in the diff if the matcher
         // matches an entire subtree.
         let mut tree_builder = MergedTreeBuilder::new(destination.id().clone());
-        async {
-            // TODO: handle copy tracking
-            let mut diff_stream = source.diff_stream(destination, matcher);
-            while let Some(TreeDiffEntry {
-                path: repo_path,
-                values,
-            }) = diff_stream.next().await
-            {
-                let (source_value, _destination_value) = values?;
-                tree_builder.set_or_remove(repo_path, source_value);
-            }
-            Ok::<(), BackendError>(())
+        // TODO: handle copy tracking
+        let mut diff_stream = source.diff_stream(destination, matcher);
+        while let Some(TreeDiffEntry {
+            path: repo_path,
+            values,
+        }) = diff_stream.next().await
+        {
+            let (source_value, _destination_value) = values?;
+            tree_builder.set_or_remove(repo_path, source_value);
         }
-        .block_on()?;
         tree_builder.write_tree(destination.store())
     }
 }
@@ -397,8 +393,8 @@ pub struct MoveCommitsStats {
     /// The number of commits for which rebase was skipped, due to the commit
     /// already being in place.
     pub num_skipped_rebases: u32,
-    /// The number of commits which were abandoned.
-    pub num_abandoned: u32,
+    /// The number of commits which were abandoned due to being empty.
+    pub num_abandoned_empty: u32,
     /// The rebased commits
     pub rebased_commits: HashMap<CommitId, RebasedCommit>,
 }
@@ -421,10 +417,11 @@ pub enum MoveCommitsTarget {
 }
 
 #[derive(Clone, Debug)]
-struct ComputedMoveCommits {
+pub struct ComputedMoveCommits {
     target_commit_ids: IndexSet<CommitId>,
     descendants: Vec<Commit>,
     commit_new_parents_map: HashMap<CommitId, Vec<CommitId>>,
+    to_abandon: HashSet<CommitId>,
 }
 
 impl ComputedMoveCommits {
@@ -433,7 +430,26 @@ impl ComputedMoveCommits {
             target_commit_ids: IndexSet::new(),
             descendants: vec![],
             commit_new_parents_map: HashMap::new(),
+            to_abandon: HashSet::new(),
         }
+    }
+
+    /// Records a set of commits to abandon while rebasing.
+    ///
+    /// Abandoning these commits while rebasing ensures that their descendants
+    /// are still rebased properly. [`MutableRepo::record_abandoned_commit`] is
+    /// similar, but it can lead to issues when abandoning a target commit
+    /// before the rebase.
+    pub fn record_to_abandon(&mut self, commit_ids: impl IntoIterator<Item = CommitId>) {
+        self.to_abandon.extend(commit_ids);
+    }
+
+    pub fn apply(
+        self,
+        mut_repo: &mut MutableRepo,
+        options: &RebaseOptions,
+    ) -> BackendResult<MoveCommitsStats> {
+        apply_move_commits(mut_repo, self, options)
     }
 }
 
@@ -450,11 +466,10 @@ pub fn move_commits(
     loc: &MoveCommitsLocation,
     options: &RebaseOptions,
 ) -> BackendResult<MoveCommitsStats> {
-    let commits = compute_move_commits(mut_repo, loc)?;
-    apply_move_commits(mut_repo, commits, options)
+    compute_move_commits(mut_repo, loc)?.apply(mut_repo, options)
 }
 
-fn compute_move_commits(
+pub fn compute_move_commits(
     repo: &MutableRepo,
     loc: &MoveCommitsLocation,
 ) -> BackendResult<ComputedMoveCommits> {
@@ -738,6 +753,7 @@ fn compute_move_commits(
         target_commit_ids,
         descendants,
         commit_new_parents_map,
+        to_abandon: HashSet::new(),
     })
 }
 
@@ -749,7 +765,7 @@ fn apply_move_commits(
     let mut num_rebased_targets = 0;
     let mut num_rebased_descendants = 0;
     let mut num_skipped_rebases = 0;
-    let mut num_abandoned = 0;
+    let mut num_abandoned_empty = 0;
 
     // Always keep empty commits when rebasing descendants.
     let rebase_descendant_options = &RebaseOptions {
@@ -765,7 +781,9 @@ fn apply_move_commits(
         &options.rewrite_refs,
         |rewriter| {
             let old_commit_id = rewriter.old_commit().id().clone();
-            if rewriter.parents_changed() {
+            if commits.to_abandon.contains(&old_commit_id) {
+                rewriter.abandon();
+            } else if rewriter.parents_changed() {
                 let is_target_commit = commits.target_commit_ids.contains(&old_commit_id);
                 let rebased_commit = rebase_commit_with_options(
                     rewriter,
@@ -776,7 +794,7 @@ fn apply_move_commits(
                     },
                 )?;
                 if let RebasedCommit::Abandoned { .. } = rebased_commit {
-                    num_abandoned += 1;
+                    num_abandoned_empty += 1;
                 } else if is_target_commit {
                     num_rebased_targets += 1;
                 } else {
@@ -795,7 +813,7 @@ fn apply_move_commits(
         num_rebased_targets,
         num_rebased_descendants,
         num_skipped_rebases,
-        num_abandoned,
+        num_abandoned_empty,
         rebased_commits,
     })
 }
@@ -1179,4 +1197,83 @@ pub fn squash_commits<'repo>(
         commit_builder,
         abandoned_commits,
     }))
+}
+
+/// Find divergent commits from the target that are already present with
+/// identical contents in the destination. These commits should be able to be
+/// safely abandoned.
+pub fn find_duplicate_divergent_commits(
+    repo: &dyn Repo,
+    new_parent_ids: &[CommitId],
+    target: &MoveCommitsTarget,
+) -> BackendResult<Vec<Commit>> {
+    let target_commits: Vec<Commit> = match target {
+        MoveCommitsTarget::Commits(commit_ids) => commit_ids
+            .iter()
+            .map(|commit_id| repo.store().get_commit(commit_id))
+            .try_collect()?,
+        MoveCommitsTarget::Roots(root_ids) => RevsetExpression::commits(root_ids.clone())
+            .descendants()
+            .evaluate(repo)
+            .map_err(|err| err.into_backend_error())?
+            .iter()
+            .commits(repo.store())
+            .try_collect()
+            .map_err(|err| err.into_backend_error())?,
+    };
+    let target_commit_ids: HashSet<&CommitId> = target_commits.iter().map(Commit::id).collect();
+
+    // For each divergent change being rebased, we want to find all of the other
+    // commits with the same change ID which are not being rebased.
+    let divergent_changes: Vec<(&Commit, Vec<CommitId>)> = target_commits
+        .iter()
+        .map(|target_commit| {
+            let mut ancestor_candidates = repo
+                .resolve_change_id(target_commit.change_id())
+                .unwrap_or_default();
+            ancestor_candidates.retain(|commit_id| !target_commit_ids.contains(commit_id));
+            (target_commit, ancestor_candidates)
+        })
+        .filter(|(_, candidates)| !candidates.is_empty())
+        .collect();
+    if divergent_changes.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let target_root_ids = match target {
+        MoveCommitsTarget::Commits(commit_ids) => commit_ids,
+        MoveCommitsTarget::Roots(root_ids) => root_ids,
+    };
+
+    // We only care about divergent changes which are new ancestors of the rebased
+    // commits, not ones which were already ancestors of the rebased commits.
+    let is_new_ancestor = RevsetExpression::commits(target_root_ids.clone())
+        .range(&RevsetExpression::commits(new_parent_ids.to_owned()))
+        .evaluate(repo)
+        .map_err(|err| err.into_backend_error())?
+        .containing_fn();
+
+    let mut duplicate_divergent = Vec::new();
+    // Checking every pair of commits between these two sets could be expensive if
+    // there are several commits with the same change ID. However, it should be
+    // uncommon to have more than a couple commits with the same change ID being
+    // rebased at the same time, so it should be good enough in practice.
+    for (target_commit, ancestor_candidates) in divergent_changes {
+        for ancestor_candidate_id in ancestor_candidates {
+            if !is_new_ancestor(&ancestor_candidate_id).map_err(|err| err.into_backend_error())? {
+                continue;
+            }
+
+            let ancestor_candidate = repo.store().get_commit(&ancestor_candidate_id)?;
+            let new_tree =
+                rebase_to_dest_parent(repo, slice::from_ref(target_commit), &ancestor_candidate)?;
+            // Check whether the rebased commit would have the same tree as the existing
+            // commit if they had the same parents. If so, we can skip this rebased commit.
+            if new_tree.id() == *ancestor_candidate.tree_id() {
+                duplicate_divergent.push(target_commit.clone());
+                break;
+            }
+        }
+    }
+    Ok(duplicate_divergent)
 }

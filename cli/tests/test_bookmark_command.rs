@@ -407,9 +407,9 @@ fn test_bookmark_move_matching() {
     insta::assert_snapshot!(output, @r"
     ------- stderr -------
     error: the following required arguments were not provided:
-      <--from <REVSETS>|NAMES>
+      <NAMES|--from <REVSETS>>
 
-    Usage: jj bookmark move --to <REVSET> <--from <REVSETS>|NAMES>
+    Usage: jj bookmark move --to <REVSET> <NAMES|--from <REVSETS>>
 
     For more information, try '--help'.
     [EOF]
@@ -1593,6 +1593,22 @@ fn test_bookmark_list() {
     [EOF]
     ------- stderr -------
     Hint: Bookmarks marked as deleted can be *deleted permanently* on the remote by running `jj git push --deleted`. Use `jj bookmark forget` if you don't want that.
+    [EOF]
+    ");
+
+    let output = local_dir.run_jj(["bookmark", "list", "--all-remotes", "--color=always"]);
+    insta::assert_snapshot!(output, @r"
+    [38;5;5mlocal-only[39m: [1m[38;5;13mw[38;5;8mqnwkozp[39m [38;5;12m03[38;5;8m53dd35[39m [38;5;10m(empty)[39m local-only[0m
+    [38;5;5mremote-delete[39m (deleted)
+      [38;5;5m@origin[39m: [1m[38;5;5mv[0m[38;5;8mruxwmqv[39m [1m[38;5;4mb[0m[38;5;8m32031cf[39m [38;5;2m(empty)[39m remote-delete
+    [38;5;5mremote-sync[39m: [1m[38;5;5mr[0m[38;5;8mlvkpnrz[39m [1m[38;5;4m7[0m[38;5;8ma07dbee[39m [38;5;2m(empty)[39m remote-sync
+      [38;5;5m@origin[39m: [1m[38;5;5mr[0m[38;5;8mlvkpnrz[39m [1m[38;5;4m7[0m[38;5;8ma07dbee[39m [38;5;2m(empty)[39m remote-sync
+    [38;5;5mremote-unsync[39m: [1m[38;5;13mw[38;5;8mqnwkozp[39m [38;5;12m03[38;5;8m53dd35[39m [38;5;10m(empty)[39m local-only[0m
+      [38;5;5m@origin[39m (ahead by 1 commits, behind by 1 commits): [1m[38;5;5mzs[0m[38;5;8muskuln[39m [1m[38;5;4m5[0m[38;5;8m53203ba[39m [38;5;2m(empty)[39m remote-unsync
+    [38;5;5mremote-untrack@origin[39m: [1m[38;5;5mro[0m[38;5;8myxmykx[39m [1m[38;5;4m1[0m[38;5;8m49bc756[39m [38;5;2m(empty)[39m remote-untrack
+    [EOF]
+    ------- stderr -------
+    [1m[38;5;6mHint: [0m[39mBookmarks marked as deleted can be *deleted permanently* on the remote by running `jj git push --deleted`. Use `jj bookmark forget` if you don't want that.[39m
     [EOF]
     ");
 

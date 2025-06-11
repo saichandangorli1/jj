@@ -15,6 +15,7 @@
 use std::path::Path;
 use std::path::PathBuf;
 
+use assert_matches::assert_matches;
 use jj_lib::config::StackedConfig;
 use jj_lib::git_backend::GitBackend;
 use jj_lib::ref_name::WorkspaceName;
@@ -173,10 +174,14 @@ fn test_init_checkout(backend: TestRepoBackend) {
         wc_commit.store_commit().parents,
         vec![repo.store().root_commit_id().clone()]
     );
-    assert!(wc_commit.predecessors().next().is_none());
+    assert!(wc_commit.store_commit().predecessors.is_empty());
     assert_eq!(wc_commit.description(), "");
     assert_eq!(wc_commit.author().name, settings.user_name());
     assert_eq!(wc_commit.author().email, settings.user_email());
     assert_eq!(wc_commit.committer().name, settings.user_name());
     assert_eq!(wc_commit.committer().email, settings.user_email());
+    assert_matches!(
+        repo.operation().predecessors_for_commit(wc_commit.id()),
+        Some([])
+    );
 }

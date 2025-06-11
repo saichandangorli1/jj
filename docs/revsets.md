@@ -55,7 +55,7 @@ only symbols.
 * `x::`: Descendants of `x`, including the commits in `x` itself. Shorthand for
   `x::visible_heads()`.
 * `x..`: Revisions that are not ancestors of `x`. Shorthand for
-  `x..visible_heads()`.
+  `x..visible_heads()`. Equivalent to `~::x`.
 * `::x`: Ancestors of `x`, including the commits in `x` itself. Shorthand for
   `root()::x`.
 * `..x`: Ancestors of `x`, including the commits in `x` itself, but excluding
@@ -244,12 +244,12 @@ revsets (expressions) as arguments.
 * `root()`: The virtual commit that is the oldest ancestor of all other commits.
 
 * `heads(x)`: Commits in `x` that are not ancestors of other commits in `x`.
-  Note that this is different from
+  Equivalent to `x ~ ::x-`. Note that this is different from
   [Mercurial's](https://repo.mercurial-scm.org/hg/help/revsets) `heads(x)`
   function, which is equivalent to `x ~ x-`.
 
 * `roots(x)`: Commits in `x` that are not descendants of other commits in `x`.
-  Note that this is different from
+  Equivalent to `x ~ x+::`. Note that this is different from
   [Mercurial's](https://repo.mercurial-scm.org/hg/help/revsets) `roots(x)`
   function, which is equivalent to `x ~ x+`.
 
@@ -518,7 +518,7 @@ behave as though the `all:` modifier was used every time it would matter.
 An `all:` modifier before a revset expression does not otherwise change its
 meaning. Strictly speaking, it is not part of the revset language. The notation
 is similar to the modifiers like `glob:` allowed before [string
-patterms](#string-patterns).
+patterns](#string-patterns).
 
 For example, `jj rebase -r w -d xyz+` will rebase `w` on top of the child of
 `xyz` as long as `xyz` has exactly one child.

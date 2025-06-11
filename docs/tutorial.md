@@ -277,10 +277,11 @@ file1    2-sided conflict
 New conflicts appeared in 2 commits:
   qzvqqupx 1978b534 (conflict) C
   puqltutt f7fb5943 (conflict) B2
-Hint: To resolve the conflicts, start by updating to the first one:
+Hint: To resolve the conflicts, start by creating a commit on top of
+the first conflicted commit:
   jj new puqltutt
 Then use `jj resolve`, or edit the conflict markers in the file directly.
-Once the conflicts are resolved, you may want to inspect the result with `jj diff`.
+Once the conflicts are resolved, you can inspect the result with `jj diff`.
 Then run `jj squash` to move the resolution into the conflicted commit.
 
 $ jj log
@@ -325,10 +326,11 @@ Working copy  (@) : zxoosnnp c7068d1c (conflict) (empty) (no description set)
 Parent commit (@-): puqltutt f7fb5943 (conflict) B2
 Warning: There are unresolved conflicts at these paths:
 file1    2-sided conflict
-Hint: To resolve the conflicts, start by updating to it:
+Hint: To resolve the conflicts, start by creating a commit on top of
+the conflicted commit:
   jj new puqltutt
 Then use `jj resolve`, or edit the conflict markers in the file directly.
-Once the conflicts are resolved, you may want to inspect the result with `jj diff`.
+Once the conflicts are resolved, you can inspect the result with `jj diff`.
 Then run `jj squash` to move the resolution into the conflicted commit.
 
 $ cat file1
@@ -389,7 +391,7 @@ commands to interact with it. To list the operations, use `jj op log`:
 ```shell
 $ jj op log
 @  d3b77addea49 martinvonz@vonz.svl.corp.google.com 3 minutes ago, lasted 3 milliseconds
-│  squash commits into 63874fe6c4fba405ffc38b0dd926f03b715cf7ef
+│  squash commits into f7fb5943a6b9460eb106dba2fac5cac1625c6f7a
 │  args: jj squash
 ○  6fc1873c1180 martinvonz@vonz.svl.corp.google.com 3 minutes ago, lasted 1 milliseconds
 │  snapshot working copy
@@ -399,7 +401,7 @@ $ jj op log
 │  args: jj new puqltutt
 ○  367400773f87 martinvonz@vonz.svl.corp.google.com 12 minutes ago, lasted 3 milliseconds
 │  rebase commit daa6ffd5a09a8a7d09a65796194e69b7ed0a566d and descendants
-│  args: jj rebase --source puqltutt --destination nuvyytnq
+│  args: jj rebase -s puqltutt -d nuvyytnq
 [many more lines]
 ```
 
@@ -414,10 +416,11 @@ Parent commit (@-)      : puqltutt f7fb5943 (conflict) B2
 New conflicts appeared in 2 commits:
   qzvqqupx 1978b534 (conflict) C
   puqltutt f7fb5943 (conflict) B2
-Hint: To resolve the conflicts, start by updating to the first one:
+Hint: To resolve the conflicts, start by creating a commit on top of
+the first conflicted commit:
   jj new nprznkxy
 Then use `jj resolve`, or edit the conflict markers in the file directly.
-Once the conflicts are resolved, you may want to inspect the result with `jj diff`.
+Once the conflicts are resolved, you can inspect the result with `jj diff`.
 Then run `jj squash` to move the resolution into the conflicted commit.
 
 $ jj log
@@ -550,10 +553,11 @@ Warning: There are unresolved conflicts at these paths:
 file    2-sided conflict
 New conflicts appeared in 1 commits:
   mrxqplyk 1c72cd50 (conflict) ABCD
-Hint: To resolve the conflicts, start by updating to it:
+Hint: To resolve the conflicts, start by creating a commit on top of
+the conflicted commit:
   jj new mrxqplyk
 Then use `jj resolve`, or edit the conflict markers in the file directly.
-Once the conflicts are resolved, you may want to inspect the result with `jj diff`.
+Once the conflicts are resolved, you can inspect the result with `jj diff`.
 Then run `jj squash` to move the resolution into the conflicted commit.
 ```
 

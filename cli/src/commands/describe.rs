@@ -132,14 +132,16 @@ pub(crate) fn cmd_describe(
     let text_editor = workspace_command.text_editor()?;
 
     let mut tx = workspace_command.start_transaction();
-    let tx_description = if commits.len() == 1 {
-        format!("describe commit {}", commits[0].id().hex())
-    } else {
-        format!(
-            "describe commit {} and {} more",
-            commits[0].id().hex(),
-            commits.len() - 1
-        )
+    let tx_description = match commits.as_slice() {
+        [] => unreachable!(),
+        [commit] => format!("describe commit {}", commit.id().hex()),
+        [first_commit, remaining_commits @ ..] => {
+            format!(
+                "describe commit {} and {} more",
+                first_commit.id().hex(),
+                remaining_commits.len()
+            )
+        }
     };
 
     let shared_description = if args.stdin {
@@ -151,11 +153,6 @@ pub(crate) fn cmd_describe(
     } else {
         None
     };
-
-    // edit and no_edit are conflicting arguments and therefore it should not
-    // be possible for both to be true at the same time.
-    assert!(!(args.edit && args.no_edit));
-    let use_editor = args.edit || (shared_description.is_none() && !args.no_edit);
 
     let mut commit_builders = commits
         .iter()
@@ -179,6 +176,8 @@ pub(crate) fn cmd_describe(
             commit_builder
         })
         .collect_vec();
+
+    let use_editor = args.edit || (shared_description.is_none() && !args.no_edit);
 
     if let Some(trailer_template) = parse_trailers_template(ui, &tx)? {
         for commit_builder in &mut commit_builders {
@@ -206,7 +205,8 @@ pub(crate) fn cmd_describe(
             .try_collect()?;
 
         if let [(_, temp_commit)] = &*temp_commits {
-            let template = description_template(ui, &tx, "", temp_commit)?;
+            let intro = "";
+            let template = description_template(ui, &tx, intro, temp_commit)?;
             let description = edit_description(&text_editor, &template)?;
             commit_builders[0].set_description(description);
         } else {

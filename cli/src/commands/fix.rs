@@ -33,6 +33,7 @@ use jj_lib::repo_path::RepoPathUiConverter;
 use jj_lib::settings::UserSettings;
 use jj_lib::store::Store;
 use pollster::FutureExt as _;
+use tokio::io::AsyncReadExt as _;
 use tracing::instrument;
 
 use crate::cli_util::CommandHelper;
@@ -144,7 +145,7 @@ pub(crate) fn cmd_fix(
 
     let mut tx = workspace_command.start_transaction();
     let mut parallel_fixer = ParallelFileFixer::new(|store, file_to_fix| {
-        fix_one_file(&workspace_root, &tools_config, store, file_to_fix)
+        fix_one_file(&workspace_root, &tools_config, store, file_to_fix).block_on()
     });
     let summary = fix_files(
         root_commits,
@@ -152,7 +153,8 @@ pub(crate) fn cmd_fix(
         args.include_unchanged_files,
         tx.repo_mut(),
         &mut parallel_fixer,
-    )?;
+    )
+    .block_on()?;
     writeln!(
         ui.status(),
         "Fixed {} commits of {} checked.",
@@ -174,7 +176,7 @@ pub(crate) fn cmd_fix(
 ///
 /// TODO: Better error handling so we can tell the user what went wrong with
 /// each failed input.
-fn fix_one_file(
+async fn fix_one_file(
     workspace_root: &Path,
     tools_config: &ToolsConfig,
     store: &Store,
@@ -190,8 +192,10 @@ fn fix_one_file(
         // subsequent matching tool gets its input from the previous matching tool's
         // output.
         let mut old_content = vec![];
-        let mut read = store.read_file(&file_to_fix.repo_path, &file_to_fix.file_id)?;
-        read.read_to_end(&mut old_content)?;
+        let mut read = store
+            .read_file(&file_to_fix.repo_path, &file_to_fix.file_id)
+            .await?;
+        read.read_to_end(&mut old_content).await?;
         let new_content = matching_tools.fold(old_content.clone(), |prev_content, tool_config| {
             match run_tool(
                 workspace_root,
@@ -210,7 +214,7 @@ fn fix_one_file(
             // TODO: send futures back over channel
             let new_file_id = store
                 .write_file(&file_to_fix.repo_path, &mut new_content.as_slice())
-                .block_on()?;
+                .await?;
             return Ok(Some(new_file_id));
         }
     }

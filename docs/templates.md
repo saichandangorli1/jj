@@ -31,6 +31,9 @@ The following operators are supported.
 * `x.f()`: Method call.
 * `-x`: Negate integer value.
 * `!x`: Logical not.
+* `x * y`, `x / y`, `x % y`: Multiplication/division/remainder. Operands must
+  be `Integer`s.
+* `x + y`, `x - y`: Addition/subtraction. Operands must be `Integer`s.
 * `x >= y`, `x > y`, `x <= y`, `x < y`: Greater than or equal/greater than/
   lesser than or equal/lesser than. Operands must be `Integer`s.
 * `x == y`, `x != y`: Equal/not equal. Operands must be either `Boolean`,
@@ -145,12 +148,19 @@ This type cannot be printed. The following methods are defined.
   likely to change in future version to respect the command line path arguments.
 * `.root() -> Boolean`: True if the commit is the root commit.
 
-### `CommitId` / `ChangeId` type
+### `ChangeId` type
 
 The following methods are defined.
 
-* `.normal_hex() -> String`: Normal hex representation (0-9a-f), useful for
-  ChangeId, whose canonical hex representation is "reversed" (z-k).
+* `.normal_hex() -> String`: Normal hex representation (0-9a-f) instead of the
+  canonical "reversed" (z-k) representation.
+* `.short([len: Integer]) -> String`
+* `.shortest([min_len: Integer]) -> ShortestIdPrefix`: Shortest unique prefix.
+
+### `CommitId` type
+
+The following methods are defined.
+
 * `.short([len: Integer]) -> String`
 * `.shortest([min_len: Integer]) -> ShortestIdPrefix`: Shortest unique prefix.
 
@@ -441,6 +451,25 @@ This type cannot be printed. The following methods are defined.
 * `.file_type() -> String`: One of `"file"`, `"symlink"`, `"tree"`,
   `"git-submodule"`, or `"conflict"`.
 * `.executable() -> Boolean`: True if the entry is an executable file.
+
+## Color labels
+
+Template fragments are usually labeled with the command name, the context (or
+the top-level object), and the method names. You can [customize the output
+colors][config-colors] by using these labels.
+
+For example, the following template is labeled as `op_log operation id short`:
+
+```sh
+jj op log -T 'self.id().short()'
+```
+
+In addition to that, you can insert arbitrary labels by `label(label, content)`
+function.
+
+To inspect how output fragments are labeled, use `--color=debug` option.
+
+[config-colors]: config.md#custom-colors-and-styles
 
 ## Configuration
 

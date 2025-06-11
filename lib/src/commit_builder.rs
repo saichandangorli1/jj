@@ -19,6 +19,7 @@ use std::sync::Arc;
 use pollster::FutureExt as _;
 
 use crate::backend;
+use crate::backend::BackendError;
 use crate::backend::BackendResult;
 use crate::backend::ChangeId;
 use crate::backend::CommitId;
@@ -349,8 +350,19 @@ impl DetachedCommitBuilder {
 
     /// Writes new commit and makes it visible in the `mut_repo`.
     pub fn write(self, mut_repo: &mut MutableRepo) -> BackendResult<Commit> {
+        let predecessors = self.commit.predecessors.clone();
         let commit = write_to_store(&self.store, self.commit, &self.sign_settings)?;
+        // FIXME: Google's index.has_id() always returns true.
+        if mut_repo.is_backed_by_default_index() && mut_repo.index().has_id(commit.id()) {
+            // Recording existing commit as new would create cycle in
+            // predecessors/parent mappings within the current transaction, and
+            // in predecessors graph globally.
+            return Err(BackendError::Other(
+                format!("Newly-created commit {id} already exists", id = commit.id()).into(),
+            ));
+        }
         mut_repo.add_head(&commit)?;
+        mut_repo.set_predecessors(commit.id().clone(), predecessors);
         if let Some(rewrite_source) = self.rewrite_source {
             if rewrite_source.change_id() == commit.change_id() {
                 mut_repo.set_rewritten_commit(rewrite_source.id().clone(), commit.id().clone());

@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use crate::common::create_commit;
+use crate::common::create_commit_with_files;
 use crate::common::CommandOutput;
 use crate::common::TestEnvironment;
 use crate::common::TestWorkDir;
@@ -704,7 +705,7 @@ fn test_rebase_revision_onto_descendant() {
     let output = work_dir.run_jj(["op", "restore", &setup_opid]);
     insta::assert_snapshot!(output, @r"
     ------- stderr -------
-    Restored to operation: e386a698bc2d (2001-02-03 08:05:15) create bookmark merge pointing to commit 08c0951bf69d0362708a5223a78446d664823b50
+    Restored to operation: cb005d7a588c (2001-02-03 08:05:15) create bookmark merge pointing to commit 08c0951bf69d0362708a5223a78446d664823b50
     Working copy  (@) now at: vruxwmqv 08c0951b merge | merge
     Parent commit (@-)      : royxmykx 6a7081ef b | b
     Parent commit (@-)      : zsuskuln 68fbc443 a | a
@@ -2963,6 +2964,91 @@ fn test_rebase_skip_if_on_destination() {
     ○ │  b1  zsuskuln  62634b59:  a
     ├─╯
     ○  a  rlvkpnrz  7d980be7
+    ◆    zzzzzzzz  00000000
+    [EOF]
+    ");
+}
+
+#[test]
+fn test_rebase_skip_duplicate_divergent() {
+    let test_env = TestEnvironment::default();
+    test_env.run_jj_in(".", ["git", "init", "repo"]).success();
+    let work_dir = test_env.work_dir("repo");
+
+    // Set up commit graph with divergent changes
+    create_commit_with_files(&work_dir, "a", &[], &[("file1", "initial\n")]);
+    create_commit_with_files(&work_dir, "b2", &["a"], &[("file1", "initial\nb\n")]);
+    create_commit_with_files(&work_dir, "c", &["a"], &[("file2", "c\n")]);
+    work_dir.run_jj(["rebase", "-r", "b2", "-d", "c"]).success();
+    work_dir
+        .run_jj(["bookmark", "create", "b1", "-r", "at_operation(@-, b2)"])
+        .success();
+    create_commit_with_files(&work_dir, "d", &["b1"], &[("file3", "d\n")]);
+
+    // Test the setup (commit B is duplicated)
+    insta::assert_snapshot!(get_long_log_output(&work_dir), @r"
+    @  d  znkkpsqq  ecbe1d2f:  b1
+    ○  b1  zsuskuln  48bf33ab:  a
+    │ ○  b2  zsuskuln  3f194323:  c
+    │ ○  c  royxmykx  0fdb9e5a:  a
+    ├─╯
+    ○  a  rlvkpnrz  08789390
+    ◆    zzzzzzzz  00000000
+    [EOF]
+    ");
+
+    // By default, rebase should skip the duplicate of commit B
+    insta::assert_snapshot!(work_dir.run_jj(["rebase", "-r", "c::", "-d", "d"]), @r"
+    ------- stderr -------
+    Abandoned 1 divergent commits that were already present in the destination:
+      zsuskuln?? 3f194323 b2 | b2
+    Rebased 1 commits to destination
+    [EOF]
+    ");
+    insta::assert_snapshot!(get_long_log_output(&work_dir), @r"
+    ○  b2 c  royxmykx  56740329:  d
+    @  d  znkkpsqq  ecbe1d2f:  b1
+    ○  b1  zsuskuln  48bf33ab:  a
+    ○  a  rlvkpnrz  08789390
+    ◆    zzzzzzzz  00000000
+    [EOF]
+    ");
+
+    // Rebasing should work even if the root of the target set is abandoned
+    work_dir.run_jj(["undo"]).success();
+    insta::assert_snapshot!(work_dir.run_jj(["rebase", "-s", "b1", "-d", "b2"]), @r"
+    ------- stderr -------
+    Abandoned 1 divergent commits that were already present in the destination:
+      zsuskuln?? 48bf33ab b1 | b2
+    Rebased 1 commits to destination
+    Working copy  (@) now at: znkkpsqq 81e83d0f d | d
+    Parent commit (@-)      : zsuskuln 3f194323 b1 b2 | b2
+    Added 1 files, modified 0 files, removed 0 files
+    [EOF]
+    ");
+    // BUG: "d" should be on top of "b2", but it wasn't rebased
+    insta::assert_snapshot!(get_long_log_output(&work_dir), @r"
+    @  d  znkkpsqq  81e83d0f:  b1 b2
+    ○  b1 b2  zsuskuln  3f194323:  c
+    ○  c  royxmykx  0fdb9e5a:  a
+    ○  a  rlvkpnrz  08789390
+    ◆    zzzzzzzz  00000000
+    [EOF]
+    ");
+
+    // Rebase with "--keep-divergent" shouldn't skip any duplicates
+    work_dir.run_jj(["undo"]).success();
+    insta::assert_snapshot!(work_dir.run_jj(["rebase", "-s", "c", "-d", "d", "--keep-divergent"]), @r"
+    ------- stderr -------
+    Rebased 2 commits to destination
+    [EOF]
+    ");
+    insta::assert_snapshot!(get_long_log_output(&work_dir), @r"
+    ○  b2  zsuskuln  f8e418c5:  c
+    ○  c  royxmykx  e232ead1:  d
+    @  d  znkkpsqq  ecbe1d2f:  b1
+    ○  b1  zsuskuln  48bf33ab:  a
+    ○  a  rlvkpnrz  08789390
     ◆    zzzzzzzz  00000000
     [EOF]
     ");

@@ -17,7 +17,7 @@
 use std::any::Any;
 use std::fmt::Debug;
 use std::fmt::Formatter;
-use std::io::Read;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::SystemTime;
@@ -25,6 +25,7 @@ use std::time::SystemTime;
 use clru::CLruCache;
 use futures::stream::BoxStream;
 use pollster::FutureExt as _;
+use tokio::io::AsyncRead;
 
 use crate::backend;
 use crate::backend::Backend;
@@ -234,35 +235,23 @@ impl Store {
         Ok(Tree::new(self.clone(), path.to_owned(), tree_id, data))
     }
 
-    pub fn read_file(&self, path: &RepoPath, id: &FileId) -> BackendResult<Box<dyn Read>> {
-        self.read_file_async(path, id).block_on()
-    }
-
-    pub async fn read_file_async(
+    pub async fn read_file(
         &self,
         path: &RepoPath,
         id: &FileId,
-    ) -> BackendResult<Box<dyn Read>> {
+    ) -> BackendResult<Pin<Box<dyn AsyncRead + Send>>> {
         self.backend.read_file(path, id).await
     }
 
     pub async fn write_file(
         &self,
         path: &RepoPath,
-        contents: &mut (dyn Read + Send),
+        contents: &mut (dyn AsyncRead + Send + Unpin),
     ) -> BackendResult<FileId> {
         self.backend.write_file(path, contents).await
     }
 
-    pub fn read_symlink(&self, path: &RepoPath, id: &SymlinkId) -> BackendResult<String> {
-        self.read_symlink_async(path, id).block_on()
-    }
-
-    pub async fn read_symlink_async(
-        &self,
-        path: &RepoPath,
-        id: &SymlinkId,
-    ) -> BackendResult<String> {
+    pub async fn read_symlink(&self, path: &RepoPath, id: &SymlinkId) -> BackendResult<String> {
         self.backend.read_symlink(path, id).await
     }
 

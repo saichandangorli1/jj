@@ -23,9 +23,9 @@ use std::fmt::Formatter;
 use std::fs;
 use std::io;
 use std::io::Cursor;
-use std::io::Read;
 use std::path::Path;
 use std::path::PathBuf;
+use std::pin::Pin;
 use std::process::Command;
 use std::process::ExitStatus;
 use std::str;
@@ -45,6 +45,8 @@ use pollster::FutureExt as _;
 use prost::Message as _;
 use smallvec::SmallVec;
 use thiserror::Error;
+use tokio::io::AsyncRead;
+use tokio::io::AsyncReadExt as _;
 
 use crate::backend::make_root_commit;
 use crate::backend::Backend;
@@ -58,6 +60,8 @@ use crate::backend::CommitId;
 use crate::backend::Conflict;
 use crate::backend::ConflictId;
 use crate::backend::ConflictTerm;
+use crate::backend::CopyHistory;
+use crate::backend::CopyId;
 use crate::backend::CopyRecord;
 use crate::backend::FileId;
 use crate::backend::MergedTreeId;
@@ -425,7 +429,7 @@ impl GitBackend {
         self.save_extra_metadata_table(mut_table, &table_lock)
     }
 
-    fn read_file_sync(&self, id: &FileId) -> BackendResult<Box<dyn Read>> {
+    fn read_file_sync(&self, id: &FileId) -> BackendResult<Vec<u8>> {
         let git_blob_id = validate_git_object_id(id)?;
         let locked_repo = self.lock_git_repo();
         let mut blob = locked_repo
@@ -433,7 +437,7 @@ impl GitBackend {
             .map_err(|err| map_not_found_err(err, id))?
             .try_into_blob()
             .map_err(|err| to_read_object_err(err, id))?;
-        Ok(Box::new(Cursor::new(blob.take_data())))
+        Ok(blob.take_data())
     }
 
     fn new_diff_platform(&self) -> BackendResult<gix::diff::blob::Platform> {
@@ -648,8 +652,9 @@ fn signature_from_git(signature: gix::actor::SignatureRef) -> Signature {
     } else {
         "".to_string()
     };
-    let timestamp = MillisSinceEpoch(signature.time.seconds * 1000);
-    let tz_offset = signature.time.offset.div_euclid(60); // in minutes
+    let time = signature.time().unwrap_or_default();
+    let timestamp = MillisSinceEpoch(time.seconds * 1000);
+    let tz_offset = time.offset.div_euclid(60); // in minutes
     Signature {
         name,
         email,
@@ -660,7 +665,7 @@ fn signature_from_git(signature: gix::actor::SignatureRef) -> Signature {
     }
 }
 
-fn signature_to_git(signature: &Signature) -> gix::actor::SignatureRef<'_> {
+fn signature_to_git(signature: &Signature) -> gix::actor::Signature {
     // git does not support empty names or emails
     let name = if !signature.name.is_empty() {
         &signature.name
@@ -676,7 +681,7 @@ fn signature_to_git(signature: &Signature) -> gix::actor::SignatureRef<'_> {
         signature.timestamp.timestamp.0.div_euclid(1000),
         signature.timestamp.tz_offset * 60, // in seconds
     );
-    gix::actor::SignatureRef {
+    gix::actor::Signature {
         name: name.into(),
         email: email.into(),
         time,
@@ -832,15 +837,21 @@ fn recreate_no_gc_refs(
     Ok(())
 }
 
-fn run_git_gc(program: &OsStr, git_dir: &Path) -> Result<(), GitGcError> {
+fn run_git_gc(program: &OsStr, git_dir: &Path, keep_newer: SystemTime) -> Result<(), GitGcError> {
+    let keep_newer = keep_newer
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or_default(); // underflow
     let mut git = Command::new(program);
-    git.arg("--git-dir=."); // turn off discovery
-    git.arg("gc");
+    git.arg("--git-dir=.") // turn off discovery
+        .arg("gc")
+        .arg(format!("--prune=@{} +0000", keep_newer.as_secs()));
     // Don't specify it by GIT_DIR/--git-dir. On Windows, the path could be
     // canonicalized as UNC path, which wouldn't be supported by git.
     git.current_dir(git_dir);
     // TODO: pass output to UI layer instead of printing directly here
+    tracing::info!(?git, "running git gc");
     let status = git.status().map_err(GitGcError::GcCommand)?;
+    tracing::info!(?status, "git gc exited");
     if !status.success() {
         return Err(GitGcError::GcCommandErrorStatus(status));
     }
@@ -969,17 +980,22 @@ impl Backend for GitBackend {
         1
     }
 
-    async fn read_file(&self, _path: &RepoPath, id: &FileId) -> BackendResult<Box<dyn Read>> {
-        self.read_file_sync(id)
+    async fn read_file(
+        &self,
+        _path: &RepoPath,
+        id: &FileId,
+    ) -> BackendResult<Pin<Box<dyn AsyncRead + Send>>> {
+        let data = self.read_file_sync(id)?;
+        Ok(Box::pin(Cursor::new(data)))
     }
 
     async fn write_file(
         &self,
         _path: &RepoPath,
-        contents: &mut (dyn Read + Send),
+        contents: &mut (dyn AsyncRead + Send + Unpin),
     ) -> BackendResult<FileId> {
         let mut bytes = Vec::new();
-        contents.read_to_end(&mut bytes).unwrap();
+        contents.read_to_end(&mut bytes).await.unwrap();
         let locked_repo = self.lock_git_repo();
         let oid = locked_repo
             .write_blob(bytes)
@@ -1013,6 +1029,24 @@ impl Backend for GitBackend {
                     source: Box::new(err),
                 })?;
         Ok(SymlinkId::new(oid.as_bytes().to_vec()))
+    }
+
+    async fn read_copy(&self, _id: &CopyId) -> BackendResult<CopyHistory> {
+        Err(BackendError::Unsupported(
+            "The Git backend doesn't support tracked copies yet".to_string(),
+        ))
+    }
+
+    async fn write_copy(&self, _contents: &CopyHistory) -> BackendResult<CopyId> {
+        Err(BackendError::Unsupported(
+            "The Git backend doesn't support tracked copies yet".to_string(),
+        ))
+    }
+
+    async fn get_related_copies(&self, _copy_id: &CopyId) -> BackendResult<Vec<CopyHistory>> {
+        Err(BackendError::Unsupported(
+            "The Git backend doesn't support tracked copies yet".to_string(),
+        ))
     }
 
     async fn read_tree(&self, _path: &RepoPath, id: &TreeId) -> BackendResult<Tree> {
@@ -1050,6 +1084,7 @@ impl Backend for GitBackend {
                             TreeValue::File {
                                 id,
                                 executable: false,
+                                copy_id: CopyId::placeholder(),
                             },
                         )
                     }
@@ -1061,6 +1096,7 @@ impl Backend for GitBackend {
                         TreeValue::File {
                             id,
                             executable: true,
+                            copy_id: CopyId::placeholder(),
                         },
                     )
                 }
@@ -1089,6 +1125,7 @@ impl Backend for GitBackend {
                     TreeValue::File {
                         id,
                         executable: false,
+                        copy_id: _, // TODO: Use the value
                     } => gix::objs::tree::Entry {
                         mode: gix::object::tree::EntryKind::Blob.into(),
                         filename: name.into(),
@@ -1097,6 +1134,7 @@ impl Backend for GitBackend {
                     TreeValue::File {
                         id,
                         executable: true,
+                        copy_id: _, // TODO: Use the value
                     } => gix::objs::tree::Entry {
                         mode: gix::object::tree::EntryKind::BlobExecutable.into(),
                         filename: name.into(),
@@ -1137,15 +1175,8 @@ impl Backend for GitBackend {
     }
 
     fn read_conflict(&self, _path: &RepoPath, id: &ConflictId) -> BackendResult<Conflict> {
-        let mut file = self.read_file_sync(&FileId::new(id.to_bytes()))?;
-        let mut data = String::new();
-        file.read_to_string(&mut data)
-            .map_err(|err| BackendError::ReadObject {
-                object_type: "conflict".to_owned(),
-                hash: id.hex(),
-                source: err.into(),
-            })?;
-        let json: serde_json::Value = serde_json::from_str(&data).unwrap();
+        let data = self.read_file_sync(&FileId::new(id.to_bytes()))?;
+        let json: serde_json::Value = serde_json::from_slice(&data).unwrap();
         Ok(Conflict {
             removes: conflict_term_list_from_json(json.get("removes").unwrap()),
             adds: conflict_term_list_from_json(json.get("adds").unwrap()),
@@ -1283,8 +1314,8 @@ impl Backend for GitBackend {
             let mut commit = gix::objs::Commit {
                 message: message.to_owned().into(),
                 tree: git_tree_id,
-                author: author.into(),
-                committer: committer.into(),
+                author: author.clone(),
+                committer: committer.clone(),
                 encoding: None,
                 parents: parents.clone(),
                 extra_headers: extra_headers.clone(),
@@ -1315,8 +1346,19 @@ impl Backend for GitBackend {
 
             match table.get_value(git_id.as_bytes()) {
                 Some(existing_extras) if existing_extras != extras => {
-                    // It's possible a commit already exists with the same commit id but different
-                    // change id. Adjust the timestamp until this is no longer the case.
+                    // It's possible a commit already exists with the same
+                    // commit id but different change id. Adjust the timestamp
+                    // until this is no longer the case.
+                    //
+                    // For example, this can happen when rebasing duplicate
+                    // commits, https://github.com/jj-vcs/jj/issues/694.
+                    //
+                    // `jj` resets the committer timestamp to the current
+                    // timestamp whenever it rewrites a commit. So, it's
+                    // unlikely for the timestamp to be 0 even if the original
+                    // commit had its timestamp set to 0. Moreover, we test that
+                    // a commit with a negative timestamp can still be written
+                    // and read back by `jj`.
                     committer.time.seconds -= 1;
                 }
                 _ => break CommitId::from_bytes(git_id.as_bytes()),
@@ -1429,9 +1471,12 @@ impl Backend for GitBackend {
         // mtime <= keep_newer? (it won't be consistent with no-gc refs
         // preserved by the keep_newer timestamp though)
         // TODO: remove unreachable extras table segments
-        // TODO: pass in keep_newer to "git gc" command
-        run_git_gc(self.git_executable.as_ref(), self.git_repo_path())
-            .map_err(|err| BackendError::Other(err.into()))?;
+        run_git_gc(
+            self.git_executable.as_ref(),
+            self.git_repo_path(),
+            keep_newer,
+        )
+        .map_err(|err| BackendError::Other(err.into()))?;
         // Since "git gc" will move loose refs into packed refs, in-memory
         // packed-refs cache should be invalidated without relying on mtime.
         git_repo.refs.force_refresh_packed_buffer().ok();
@@ -1523,7 +1568,11 @@ fn conflict_term_from_json(json: &serde_json::Value) -> ConflictTerm {
 
 fn tree_value_to_json(value: &TreeValue) -> serde_json::Value {
     match value {
-        TreeValue::File { id, executable } => serde_json::json!({
+        TreeValue::File {
+            id,
+            executable,
+            copy_id: _,
+        } => serde_json::json!({
              "file": {
                  "id": id.hex(),
                  "executable": executable,
@@ -1549,6 +1598,7 @@ fn tree_value_from_json(json: &serde_json::Value) -> TreeValue {
         TreeValue::File {
             id: FileId::new(bytes_vec_from_json(json_file.get("id").unwrap())),
             executable: json_file.get("executable").unwrap().as_bool().unwrap(),
+            copy_id: CopyId::placeholder(),
         }
     } else if let Some(json_id) = json.get("symlink_id") {
         TreeValue::Symlink(SymlinkId::new(bytes_vec_from_json(json_id)))
@@ -1570,6 +1620,7 @@ fn bytes_vec_from_json(value: &serde_json::Value) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use assert_matches::assert_matches;
+    use gix::date::parse::TimeBuf;
     use hex::ToHex as _;
     use pollster::FutureExt as _;
 
@@ -1642,8 +1693,8 @@ mod tests {
         };
         let git_commit_id = git_repo
             .commit_as(
-                &git_committer,
-                &git_author,
+                git_committer.to_ref(&mut TimeBuf::default()),
+                git_author.to_ref(&mut TimeBuf::default()),
                 "refs/heads/dummy",
                 "git commit message",
                 root_tree_id,
@@ -1669,8 +1720,8 @@ mod tests {
         // Add an empty commit on top
         let git_commit_id2 = git_repo
             .commit_as(
-                &git_committer,
-                &git_author,
+                git_committer.to_ref(&mut TimeBuf::default()),
+                git_author.to_ref(&mut TimeBuf::default()),
                 "refs/heads/dummy2",
                 "git commit message 2",
                 root_tree_id,
@@ -1757,7 +1808,8 @@ mod tests {
             file.value(),
             &TreeValue::File {
                 id: FileId::from_bytes(blob1.as_bytes()),
-                executable: false
+                executable: false,
+                copy_id: CopyId::placeholder(),
             }
         );
         assert_eq!(symlink.name().as_internal_str(), "symlink");
@@ -1793,8 +1845,8 @@ mod tests {
             gix::ObjectId::from_hex(b"4b825dc642cb6eb9a060e54bf8d69288fbee4904").unwrap();
         let git_commit_id = git_repo
             .commit_as(
-                &signature,
-                &signature,
+                signature.to_ref(&mut TimeBuf::default()),
+                signature.to_ref(&mut TimeBuf::default()),
                 "refs/heads/main",
                 "git commit message",
                 empty_tree_id,
@@ -1924,20 +1976,20 @@ mod tests {
 
     #[test]
     fn read_empty_string_placeholder() {
-        let git_signature1 = gix::actor::SignatureRef {
+        let git_signature1 = gix::actor::Signature {
             name: EMPTY_STRING_PLACEHOLDER.into(),
             email: "git.author@example.com".into(),
             time: gix::date::Time::new(1000, 60 * 60),
         };
-        let signature1 = signature_from_git(git_signature1);
+        let signature1 = signature_from_git(git_signature1.to_ref(&mut TimeBuf::default()));
         assert!(signature1.name.is_empty());
         assert_eq!(signature1.email, "git.author@example.com");
-        let git_signature2 = gix::actor::SignatureRef {
+        let git_signature2 = gix::actor::Signature {
             name: "git committer".into(),
             email: EMPTY_STRING_PLACEHOLDER.into(),
             time: gix::date::Time::new(2000, -480 * 60),
         };
-        let signature2 = signature_from_git(git_signature2);
+        let signature2 = signature_from_git(git_signature2.to_ref(&mut TimeBuf::default()));
         assert_eq!(signature2.name, "git committer");
         assert!(signature2.email.is_empty());
     }
@@ -2094,7 +2146,7 @@ mod tests {
             .iter()
             .map(Result::unwrap)
             .filter(|entry| entry.filename() != b"README")
-            .all(|entry| entry.mode().0 == 0o040000));
+            .all(|entry| entry.mode().value() == 0o040000));
         let mut iter = git_tree.iter().map(Result::unwrap);
         let entry = iter.next().unwrap();
         assert_eq!(entry.filename(), b".jjconflict-base-0");
@@ -2128,7 +2180,7 @@ mod tests {
         );
         let entry = iter.next().unwrap();
         assert_eq!(entry.filename(), b"README");
-        assert_eq!(entry.mode().0, 0o100644);
+        assert_eq!(entry.mode().value(), 0o100644);
         assert!(iter.next().is_none());
 
         // When writing a single tree using the new format, it's represented by a
@@ -2212,8 +2264,8 @@ mod tests {
             gix::ObjectId::from_hex(b"4b825dc642cb6eb9a060e54bf8d69288fbee4904").unwrap();
         let git_commit_id = git_repo
             .commit_as(
-                &signature,
-                &signature,
+                signature.to_ref(&mut TimeBuf::default()),
+                signature.to_ref(&mut TimeBuf::default()),
                 "refs/heads/main",
                 "git commit message",
                 empty_tree_id,

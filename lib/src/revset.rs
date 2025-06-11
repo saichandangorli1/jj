@@ -500,15 +500,7 @@ impl<St: ExpressionState> RevsetExpression<St> {
 
     /// Commits that are in any of the `expressions`.
     pub fn union_all(expressions: &[Rc<Self>]) -> Rc<Self> {
-        match expressions {
-            [] => Self::none(),
-            [expression] => expression.clone(),
-            _ => {
-                // Build balanced tree to minimize the recursion depth.
-                let (left, right) = expressions.split_at(expressions.len() / 2);
-                Self::union(&Self::union_all(left), &Self::union_all(right))
-            }
-        }
+        to_binary_expression(expressions, &Self::none, &Self::union)
     }
 
     /// Commits that are in `self` and in `other`.
@@ -524,15 +516,11 @@ impl<St: ExpressionState> RevsetExpression<St> {
     /// Commits that are in the first expression in `expressions` that is not
     /// `none()`.
     pub fn coalesce(expressions: &[Rc<Self>]) -> Rc<Self> {
-        match expressions {
-            [] => Self::none(),
-            [expression] => expression.clone(),
-            _ => {
-                // Build balanced tree to minimize the recursion depth.
-                let (left, right) = expressions.split_at(expressions.len() / 2);
-                Rc::new(Self::Coalesce(Self::coalesce(left), Self::coalesce(right)))
-            }
-        }
+        to_binary_expression(expressions, &Self::none, &Self::coalesce2)
+    }
+
+    fn coalesce2(self: &Rc<Self>, other: &Rc<Self>) -> Rc<Self> {
+        Rc::new(Self::Coalesce(self.clone(), other.clone()))
     }
 }
 
@@ -1075,9 +1063,7 @@ pub fn lower_expression(
             ))
         }
         ExpressionKind::DagRangeAll => Ok(RevsetExpression::all()),
-        ExpressionKind::RangeAll => {
-            Ok(RevsetExpression::root().range(&RevsetExpression::visible_heads()))
-        }
+        ExpressionKind::RangeAll => Ok(RevsetExpression::root().negated()),
         ExpressionKind::Unary(op, arg_node) => {
             let arg = lower_expression(diagnostics, arg_node, context)?;
             match op {
@@ -1085,7 +1071,7 @@ pub fn lower_expression(
                 UnaryOp::DagRangePre => Ok(arg.ancestors()),
                 UnaryOp::DagRangePost => Ok(arg.descendants()),
                 UnaryOp::RangePre => Ok(RevsetExpression::root().range(&arg)),
-                UnaryOp::RangePost => Ok(arg.range(&RevsetExpression::visible_heads())),
+                UnaryOp::RangePost => Ok(arg.ancestors().negated()),
                 UnaryOp::Parents => Ok(arg.parents()),
                 UnaryOp::Children => Ok(arg.children()),
             }
@@ -1162,6 +1148,27 @@ pub fn parse_with_modifier(
         },
     )
     .map_err(|err| err.extend_function_candidates(context.aliases_map.function_names()))
+}
+
+/// Constructs binary tree from `expressions` list, `unit` node, and associative
+/// `binary` operation.
+fn to_binary_expression<T: Clone>(
+    expressions: &[T],
+    unit: &impl Fn() -> T,
+    binary: &impl Fn(&T, &T) -> T,
+) -> T {
+    match expressions {
+        [] => unit(),
+        [expression] => expression.clone(),
+        _ => {
+            // Build balanced tree to minimize the recursion depth.
+            let (left, right) = expressions.split_at(expressions.len() / 2);
+            binary(
+                &to_binary_expression(left, unit, binary),
+                &to_binary_expression(right, unit, binary),
+            )
+        }
+    }
 }
 
 /// `Some` for rewritten expression, or `None` to reuse the original expression.
@@ -1583,8 +1590,8 @@ fn internalize_filter<St: ExpressionState>(
 
 /// Eliminates redundant nodes like `x & all()`, `~~x`.
 ///
-/// This does not rewrite 'x & none()' to 'none()' because 'x' may be an invalid
-/// symbol.
+/// Since this function rewrites `x & none()` to `none()`, user symbols should
+/// have been resolved. Otherwise, an invalid symbol could be optimized out.
 fn fold_redundant_expression<St: ExpressionState>(
     expression: &Rc<RevsetExpression<St>>,
 ) -> TransformedExpression<St> {
@@ -1593,8 +1600,23 @@ fn fold_redundant_expression<St: ExpressionState>(
             RevsetExpression::NotIn(inner) => Some(inner.clone()),
             _ => None,
         },
+        RevsetExpression::Union(expression1, expression2) => {
+            match (expression1.as_ref(), expression2.as_ref()) {
+                (_, RevsetExpression::None) => Some(expression1.clone()),
+                (RevsetExpression::None, _) => Some(expression2.clone()),
+                // TODO: To enable these substitution rules, we'll first need to
+                // fix handling of hidden revisions. See
+                // VisibilityResolutionContext::resolve_all() for details.
+                //
+                // (RevsetExpression::All, _) => Some(RevsetExpression::all()),
+                // (_, RevsetExpression::All) => Some(RevsetExpression::all()),
+                _ => None,
+            }
+        }
         RevsetExpression::Intersection(expression1, expression2) => {
             match (expression1.as_ref(), expression2.as_ref()) {
+                (RevsetExpression::None, _) => Some(RevsetExpression::none()),
+                (_, RevsetExpression::None) => Some(RevsetExpression::none()),
                 (_, RevsetExpression::All) => Some(expression1.clone()),
                 (RevsetExpression::All, _) => Some(expression2.clone()),
                 _ => None,
@@ -3055,11 +3077,12 @@ mod tests {
         }
         "#);
         insta::assert_debug_snapshot!(parse("foo..").unwrap(), @r#"
-        Range {
-            roots: CommitRef(Symbol("foo")),
-            heads: VisibleHeads,
-            generation: 0..18446744073709551615,
-        }
+        NotIn(
+            Ancestors {
+                heads: CommitRef(Symbol("foo")),
+                generation: 0..18446744073709551615,
+            },
+        )
         "#);
         insta::assert_debug_snapshot!(parse("foo..bar").unwrap(), @r#"
         Range {
@@ -3069,13 +3092,7 @@ mod tests {
         }
         "#);
         // Parse the nullary "range" operator
-        insta::assert_debug_snapshot!(parse("..").unwrap(), @r"
-        Range {
-            roots: Root,
-            heads: VisibleHeads,
-            generation: 0..18446744073709551615,
-        }
-        ");
+        insta::assert_debug_snapshot!(parse("..").unwrap(), @r#"NotIn(Root)"#);
         // Parse the "negate" operator
         insta::assert_debug_snapshot!(
             parse("~ foo").unwrap(),
@@ -3606,6 +3623,35 @@ mod tests {
     }
 
     #[test]
+    fn test_optimize_basic() {
+        let settings = insta_settings();
+        let _guard = settings.bind_to_scope();
+
+        insta::assert_debug_snapshot!(optimize(parse("all() | none()").unwrap()), @"All");
+        insta::assert_debug_snapshot!(optimize(parse("all() & none()").unwrap()), @"None");
+        insta::assert_debug_snapshot!(optimize(parse("root() | all()").unwrap()), @r"
+        Union(
+            Root,
+            All,
+        )
+        ");
+        insta::assert_debug_snapshot!(optimize(parse("root() & all()").unwrap()), @"Root");
+        insta::assert_debug_snapshot!(optimize(parse("none() | root()").unwrap()), @"Root");
+        insta::assert_debug_snapshot!(optimize(parse("none() & root()").unwrap()), @"None");
+        insta::assert_debug_snapshot!(optimize(parse("~~none()").unwrap()), @"None");
+        insta::assert_debug_snapshot!(
+            optimize(parse("(root() | none()) & (visible_heads() | ~~all())").unwrap()), @r"
+        Intersection(
+            Root,
+            Union(
+                VisibleHeads,
+                All,
+            ),
+        )
+        ");
+    }
+
+    #[test]
     fn test_optimize_difference() {
         let settings = insta_settings();
         let _guard = settings.bind_to_scope();
@@ -3678,6 +3724,13 @@ mod tests {
         }
         "#);
         insta::assert_debug_snapshot!(optimize(parse("foo..bar").unwrap()), @r#"
+        Range {
+            roots: CommitRef(Symbol("foo")),
+            heads: CommitRef(Symbol("bar")),
+            generation: 0..18446744073709551615,
+        }
+        "#);
+        insta::assert_debug_snapshot!(optimize(parse("foo.. & ::bar").unwrap()), @r#"
         Range {
             roots: CommitRef(Symbol("foo")),
             heads: CommitRef(Symbol("bar")),

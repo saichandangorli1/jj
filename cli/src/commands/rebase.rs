@@ -24,7 +24,8 @@ use jj_lib::object_id::ObjectId as _;
 use jj_lib::repo::ReadonlyRepo;
 use jj_lib::repo::Repo as _;
 use jj_lib::revset::RevsetExpression;
-use jj_lib::rewrite::move_commits;
+use jj_lib::rewrite::compute_move_commits;
+use jj_lib::rewrite::find_duplicate_divergent_commits;
 use jj_lib::rewrite::EmptyBehaviour;
 use jj_lib::rewrite::MoveCommitsLocation;
 use jj_lib::rewrite::MoveCommitsStats;
@@ -34,11 +35,11 @@ use jj_lib::rewrite::RewriteRefsOptions;
 use tracing::instrument;
 
 use crate::cli_util::compute_commit_location;
+use crate::cli_util::print_updated_commits;
 use crate::cli_util::short_commit_hash;
 use crate::cli_util::CommandHelper;
 use crate::cli_util::RevisionArg;
 use crate::cli_util::WorkspaceCommandHelper;
-use crate::command_error::cli_error;
 use crate::command_error::user_error;
 use crate::command_error::CommandError;
 use crate::complete;
@@ -314,16 +315,20 @@ pub(crate) struct RebaseArgs {
     #[command(flatten)]
     destination: RebaseDestinationArgs,
 
-    /// Deprecated. Use --skip-emptied instead.
-    #[arg(long, conflicts_with = "revisions", hide = true)]
-    skip_empty: bool,
-
     /// If true, when rebasing would produce an empty commit, the commit is
     /// abandoned. It will not be abandoned if it was already empty before the
     /// rebase. Will never skip merge commits with multiple non-empty
     /// parents.
     #[arg(long)]
     skip_emptied: bool,
+
+    /// Keep divergent commits while rebasing
+    ///
+    /// Without this flag, divergent commits are abandoned while rebasing if
+    /// another commit with the same change ID is already present in the
+    /// destination with identical changes.
+    #[arg(long)]
+    keep_divergent: bool,
 }
 
 #[derive(clap::Args, Clone, Debug)]
@@ -368,12 +373,6 @@ pub(crate) fn cmd_rebase(
     command: &CommandHelper,
     args: &RebaseArgs,
 ) -> Result<(), CommandError> {
-    if args.skip_empty {
-        return Err(cli_error(
-            "--skip-empty is deprecated, and has been renamed to --skip-emptied.",
-        ));
-    }
-
     let rebase_options = RebaseOptions {
         empty: match args.skip_emptied {
             true => EmptyBehaviour::AbandonNewlyEmpty,
@@ -394,7 +393,27 @@ pub(crate) fn cmd_rebase(
     };
 
     let mut tx = workspace_command.start_transaction();
-    let stats = move_commits(tx.repo_mut(), &loc, &rebase_options)?;
+    let mut computed_move = compute_move_commits(tx.repo(), &loc)?;
+    if !args.keep_divergent {
+        let abandoned_divergent =
+            find_duplicate_divergent_commits(tx.repo(), &loc.new_parent_ids, &loc.target)?;
+        computed_move.record_to_abandon(abandoned_divergent.iter().map(Commit::id).cloned());
+        if !abandoned_divergent.is_empty() {
+            if let Some(mut formatter) = ui.status_formatter() {
+                writeln!(
+                    formatter,
+                    "Abandoned {} divergent commits that were already present in the destination:",
+                    abandoned_divergent.len(),
+                )?;
+                print_updated_commits(
+                    formatter.as_mut(),
+                    &tx.base_workspace_helper().commit_summary_template(),
+                    &abandoned_divergent,
+                )?;
+            }
+        }
+    };
+    let stats = computed_move.apply(tx.repo_mut(), &rebase_options)?;
     print_move_commits_stats(ui, &stats)?;
     tx.finish(ui, tx_description(&loc.target))?;
 
@@ -561,7 +580,7 @@ fn print_move_commits_stats(ui: &Ui, stats: &MoveCommitsStats) -> std::io::Resul
         num_rebased_targets,
         num_rebased_descendants,
         num_skipped_rebases,
-        num_abandoned,
+        num_abandoned_empty,
         rebased_commits: _,
     } = stats;
     if num_skipped_rebases > 0 {
@@ -582,8 +601,11 @@ fn print_move_commits_stats(ui: &Ui, stats: &MoveCommitsStats) -> std::io::Resul
             "Rebased {num_rebased_descendants} descendant commits"
         )?;
     }
-    if num_abandoned > 0 {
-        writeln!(formatter, "Abandoned {num_abandoned} newly emptied commits")?;
+    if num_abandoned_empty > 0 {
+        writeln!(
+            formatter,
+            "Abandoned {num_abandoned_empty} newly emptied commits"
+        )?;
     }
     Ok(())
 }

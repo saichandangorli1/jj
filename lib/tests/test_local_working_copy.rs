@@ -23,6 +23,7 @@ use std::sync::Arc;
 use assert_matches::assert_matches;
 use indoc::indoc;
 use itertools::Itertools as _;
+use jj_lib::backend::CopyId;
 use jj_lib::backend::MergedTreeId;
 use jj_lib::backend::TreeId;
 use jj_lib::backend::TreeValue;
@@ -55,6 +56,7 @@ use pollster::FutureExt as _;
 use test_case::test_case;
 use testutils::commit_with_tree;
 use testutils::create_tree;
+use testutils::create_tree_with;
 use testutils::repo_path;
 use testutils::repo_path_buf;
 use testutils::repo_path_component;
@@ -158,6 +160,7 @@ fn test_checkout_file_transitions(backend: TestRepoBackend) {
         path: &RepoPath,
     ) {
         let store = repo.store();
+        let copy_id = CopyId::placeholder();
         let value = match kind {
             Kind::Missing => Merge::absent(),
             Kind::Normal => {
@@ -165,6 +168,7 @@ fn test_checkout_file_transitions(backend: TestRepoBackend) {
                 Merge::normal(TreeValue::File {
                     id,
                     executable: false,
+                    copy_id,
                 })
             }
             Kind::Executable => {
@@ -173,6 +177,7 @@ fn test_checkout_file_transitions(backend: TestRepoBackend) {
                 Merge::normal(TreeValue::File {
                     id,
                     executable: true,
+                    copy_id,
                 })
             }
             Kind::ExecutableNormalContent => {
@@ -180,6 +185,7 @@ fn test_checkout_file_transitions(backend: TestRepoBackend) {
                 Merge::normal(TreeValue::File {
                     id,
                     executable: true,
+                    copy_id,
                 })
             }
             Kind::Conflict => {
@@ -190,15 +196,18 @@ fn test_checkout_file_transitions(backend: TestRepoBackend) {
                     vec![Some(TreeValue::File {
                         id: base_file_id,
                         executable: false,
+                        copy_id: copy_id.clone(),
                     })],
                     vec![
                         Some(TreeValue::File {
                             id: left_file_id,
                             executable: false,
+                            copy_id: copy_id.clone(),
                         }),
                         Some(TreeValue::File {
                             id: right_file_id,
                             executable: false,
+                            copy_id: copy_id.clone(),
                         }),
                     ],
                 )
@@ -213,15 +222,18 @@ fn test_checkout_file_transitions(backend: TestRepoBackend) {
                     vec![Some(TreeValue::File {
                         id: base_file_id,
                         executable: true,
+                        copy_id: copy_id.clone(),
                     })],
                     vec![
                         Some(TreeValue::File {
                             id: left_file_id,
                             executable: true,
+                            copy_id: copy_id.clone(),
                         }),
                         Some(TreeValue::File {
                             id: right_file_id,
                             executable: true,
+                            copy_id: copy_id.clone(),
                         }),
                     ],
                 )
@@ -236,6 +248,7 @@ fn test_checkout_file_transitions(backend: TestRepoBackend) {
                 let value = TreeValue::File {
                     id,
                     executable: false,
+                    copy_id: copy_id.clone(),
                 };
                 tree_builder.set_or_remove(file_path, Merge::normal(value));
                 return;
@@ -565,7 +578,14 @@ fn test_tree_builder_file_directory_transition() {
 
     // Add file at parent_path
     let mut tree_builder = store.tree_builder(store.empty_tree_id().clone());
-    testutils::write_normal_file(&mut tree_builder, parent_path, "");
+    tree_builder.set(
+        parent_path.to_owned(),
+        TreeValue::File {
+            id: testutils::write_file(store, parent_path, ""),
+            executable: false,
+            copy_id: CopyId::placeholder(),
+        },
+    );
     let tree_id = tree_builder.write_tree().unwrap();
     check_out_tree(&tree_id);
     assert!(parent_path.to_fs_path_unchecked(&workspace_root).is_file());
@@ -574,7 +594,14 @@ fn test_tree_builder_file_directory_transition() {
     // Turn parent_path into directory, add file at child_path
     let mut tree_builder = store.tree_builder(tree_id);
     tree_builder.remove(parent_path.to_owned());
-    testutils::write_normal_file(&mut tree_builder, child_path, "");
+    tree_builder.set(
+        child_path.to_owned(),
+        TreeValue::File {
+            id: testutils::write_file(store, child_path, ""),
+            executable: false,
+            copy_id: CopyId::placeholder(),
+        },
+    );
     let tree_id = tree_builder.write_tree().unwrap();
     check_out_tree(&tree_id);
     assert!(parent_path.to_fs_path_unchecked(&workspace_root).is_dir());
@@ -583,7 +610,14 @@ fn test_tree_builder_file_directory_transition() {
     // Turn parent_path back to file
     let mut tree_builder = store.tree_builder(tree_id);
     tree_builder.remove(child_path.to_owned());
-    testutils::write_normal_file(&mut tree_builder, parent_path, "");
+    tree_builder.set(
+        parent_path.to_owned(),
+        TreeValue::File {
+            id: testutils::write_file(store, parent_path, ""),
+            executable: false,
+            copy_id: CopyId::placeholder(),
+        },
+    );
     let tree_id = tree_builder.write_tree().unwrap();
     check_out_tree(&tree_id);
     assert!(parent_path.to_fs_path_unchecked(&workspace_root).is_file());
@@ -1198,32 +1232,6 @@ fn test_gitignores_ignored_directory_already_tracked() {
     let workspace_root = test_workspace.workspace.workspace_root().to_owned();
     let repo = test_workspace.repo.clone();
 
-    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-    enum Kind {
-        Normal,
-        Executable,
-        Symlink,
-    }
-    let create_tree_with_kind = |path_contents: &[(&RepoPath, Kind, &str)]| {
-        let store = repo.store();
-        let mut tree_builder = store.tree_builder(store.empty_tree_id().clone());
-        for (path, kind, contents) in path_contents {
-            match kind {
-                Kind::Normal => {
-                    testutils::write_normal_file(&mut tree_builder, path, contents);
-                }
-                Kind::Executable => {
-                    testutils::write_executable_file(&mut tree_builder, path, contents);
-                }
-                Kind::Symlink => {
-                    testutils::write_symlink(&mut tree_builder, path, contents);
-                }
-            }
-        }
-        let id = tree_builder.write_tree().unwrap();
-        MergedTree::resolved(store.get_tree(RepoPathBuf::root(), &id).unwrap())
-    };
-
     let gitignore_path = repo_path(".gitignore");
     let unchanged_normal_path = repo_path("ignored/unchanged_normal");
     let modified_normal_path = repo_path("ignored/modified_normal");
@@ -1234,18 +1242,24 @@ fn test_gitignores_ignored_directory_already_tracked() {
     let unchanged_symlink_path = repo_path("ignored/unchanged_symlink");
     let modified_symlink_path = repo_path("ignored/modified_symlink");
     let deleted_symlink_path = repo_path("ignored/deleted_symlink");
-    let tree = create_tree_with_kind(&[
-        (gitignore_path, Kind::Normal, "/ignored/\n"),
-        (unchanged_normal_path, Kind::Normal, "contents"),
-        (modified_normal_path, Kind::Normal, "contents"),
-        (deleted_normal_path, Kind::Normal, "contents"),
-        (unchanged_executable_path, Kind::Executable, "contents"),
-        (modified_executable_path, Kind::Executable, "contents"),
-        (deleted_executable_path, Kind::Executable, "contents"),
-        (unchanged_symlink_path, Kind::Symlink, "contents"),
-        (modified_symlink_path, Kind::Symlink, "contents"),
-        (deleted_symlink_path, Kind::Symlink, "contents"),
-    ]);
+    let tree = create_tree_with(&repo, |builder| {
+        builder.file(gitignore_path, "/ignored/\n");
+        builder.file(unchanged_normal_path, "contents");
+        builder.file(modified_normal_path, "contents");
+        builder.file(deleted_normal_path, "contents");
+        builder
+            .file(unchanged_executable_path, "contents")
+            .executable(true);
+        builder
+            .file(modified_executable_path, "contents")
+            .executable(true);
+        builder
+            .file(deleted_executable_path, "contents")
+            .executable(true);
+        builder.symlink(unchanged_symlink_path, "contents");
+        builder.symlink(modified_symlink_path, "contents");
+        builder.symlink(deleted_symlink_path, "contents");
+    });
     let commit = commit_with_tree(repo.store(), tree.id());
 
     // Check out the tree with the files in `ignored/`
@@ -1282,15 +1296,19 @@ fn test_gitignores_ignored_directory_already_tracked() {
     }
     std::fs::remove_file(deleted_symlink_path.to_fs_path_unchecked(&workspace_root)).unwrap();
     let new_tree = test_workspace.snapshot().unwrap();
-    let expected_tree = create_tree_with_kind(&[
-        (gitignore_path, Kind::Normal, "/ignored/\n"),
-        (unchanged_normal_path, Kind::Normal, "contents"),
-        (modified_normal_path, Kind::Normal, "modified"),
-        (unchanged_executable_path, Kind::Executable, "contents"),
-        (modified_executable_path, Kind::Executable, "modified"),
-        (unchanged_symlink_path, Kind::Symlink, "contents"),
-        (modified_symlink_path, Kind::Symlink, "modified"),
-    ]);
+    let expected_tree = create_tree_with(&repo, |builder| {
+        builder.file(gitignore_path, "/ignored/\n");
+        builder.file(unchanged_normal_path, "contents");
+        builder.file(modified_normal_path, "modified");
+        builder
+            .file(unchanged_executable_path, "contents")
+            .executable(true);
+        builder
+            .file(modified_executable_path, "modified")
+            .executable(true);
+        builder.symlink(unchanged_symlink_path, "contents");
+        builder.symlink(modified_symlink_path, "modified");
+    });
     assert_eq!(tree_entries(&new_tree), tree_entries(&expected_tree));
 }
 
@@ -1350,6 +1368,7 @@ fn test_git_submodule(gitignore_content: &str) {
         Merge::normal(TreeValue::File {
             id: testutils::write_file(repo.store(), added_path, "added\n"),
             executable: false,
+            copy_id: CopyId::new(vec![]),
         }),
     );
 
@@ -1981,13 +2000,11 @@ fn test_check_out_reserved_file_path_vfat(vfat_path_str: &str, file_path_strs: &
 
     let vfat_disk_path = workspace_root.join(vfat_path_str);
     let file_paths = file_path_strs.iter().map(|&s| repo_path(s)).collect_vec();
-    let tree1 = create_tree(
-        repo,
-        &file_paths
-            .iter()
-            .map(|&path| (path, "contents"))
-            .collect_vec(),
-    );
+    let tree1 = create_tree_with(repo, |builder| {
+        for path in file_paths {
+            builder.file(path, "contents");
+        }
+    });
     let tree2 = create_tree(repo, &[]);
     let commit1 = commit_with_tree(repo.store(), tree1.id());
     let commit2 = commit_with_tree(repo.store(), tree2.id());
@@ -2094,7 +2111,7 @@ fn test_fsmonitor() {
         let mut locked_ws = ws.start_working_copy_mutation().unwrap();
         let tree_id = snapshot(&mut locked_ws, &[foo_path]);
         insta::assert_snapshot!(testutils::dump_tree(repo.store(), &tree_id), @r#"
-        tree d5e38c0a1b0ee5de47c5
+        tree 2a5341b103917cfdb48a
           file "foo" (e99c2057c15160add351): "foo\n"
         "#);
     }
@@ -2106,7 +2123,7 @@ fn test_fsmonitor() {
             &[foo_path, bar_path, nested_path, ignored_path],
         );
         insta::assert_snapshot!(testutils::dump_tree(repo.store(), &tree_id), @r#"
-        tree f408c8d080414f8e90e1
+        tree 1c5c336421714b1df7bb
           file "bar" (94cc973e7e1aefb7eff6): "bar\n"
           file "foo" (e99c2057c15160add351): "foo\n"
           file "path/to/nested" (6209060941cd770c8d46): "nested\n"
@@ -2120,7 +2137,7 @@ fn test_fsmonitor() {
         let mut locked_ws = ws.start_working_copy_mutation().unwrap();
         let tree_id = snapshot(&mut locked_ws, &[foo_path]);
         insta::assert_snapshot!(testutils::dump_tree(repo.store(), &tree_id), @r#"
-        tree e994a93c46f41dc91704
+        tree f653dfa18d0b025bdb9e
           file "bar" (94cc973e7e1aefb7eff6): "bar\n"
           file "foo" (e0fbd106147cc04ccd05): "updated foo\n"
           file "path/to/nested" (6209060941cd770c8d46): "nested\n"
@@ -2132,7 +2149,7 @@ fn test_fsmonitor() {
         let mut locked_ws = ws.start_working_copy_mutation().unwrap();
         let tree_id = snapshot(&mut locked_ws, &[foo_path]);
         insta::assert_snapshot!(testutils::dump_tree(repo.store(), &tree_id), @r#"
-        tree 1df764981d4d74a4ecfa
+        tree b7416fc248a038b920c3
           file "bar" (94cc973e7e1aefb7eff6): "bar\n"
           file "path/to/nested" (6209060941cd770c8d46): "nested\n"
         "#);

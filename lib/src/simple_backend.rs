@@ -18,10 +18,12 @@ use std::any::Any;
 use std::fmt::Debug;
 use std::fs;
 use std::fs::File;
-use std::io::Read;
+use std::io::Cursor;
+use std::io::Read as _;
 use std::io::Write as _;
 use std::path::Path;
 use std::path::PathBuf;
+use std::pin::Pin;
 use std::time::SystemTime;
 
 use async_trait::async_trait;
@@ -32,6 +34,8 @@ use futures::stream::BoxStream;
 use pollster::FutureExt as _;
 use prost::Message as _;
 use tempfile::NamedTempFile;
+use tokio::io::AsyncRead;
+use tokio::io::AsyncReadExt as _;
 
 use crate::backend::make_root_commit;
 use crate::backend::Backend;
@@ -43,6 +47,8 @@ use crate::backend::CommitId;
 use crate::backend::Conflict;
 use crate::backend::ConflictId;
 use crate::backend::ConflictTerm;
+use crate::backend::CopyHistory;
+use crate::backend::CopyId;
 use crate::backend::CopyRecord;
 use crate::backend::FileId;
 use crate::backend::MergedTreeId;
@@ -184,16 +190,27 @@ impl Backend for SimpleBackend {
         1
     }
 
-    async fn read_file(&self, _path: &RepoPath, id: &FileId) -> BackendResult<Box<dyn Read>> {
-        let path = self.file_path(id);
-        let file = File::open(path).map_err(|err| map_not_found_err(err, id))?;
-        Ok(Box::new(file))
+    async fn read_file(
+        &self,
+        path: &RepoPath,
+        id: &FileId,
+    ) -> BackendResult<Pin<Box<dyn AsyncRead + Send>>> {
+        let disk_path = self.file_path(id);
+        let mut file = File::open(disk_path).map_err(|err| map_not_found_err(err, id))?;
+        let mut buf = vec![];
+        file.read_to_end(&mut buf)
+            .map_err(|err| BackendError::ReadFile {
+                path: path.to_owned(),
+                id: id.clone(),
+                source: err.into(),
+            })?;
+        Ok(Box::pin(Cursor::new(buf)))
     }
 
     async fn write_file(
         &self,
         _path: &RepoPath,
-        contents: &mut (dyn Read + Send),
+        contents: &mut (dyn AsyncRead + Send + Unpin),
     ) -> BackendResult<FileId> {
         // TODO: Write temporary file in the destination directory (#5712)
         let temp_file = NamedTempFile::new_in(&self.path).map_err(to_other_err)?;
@@ -201,7 +218,7 @@ impl Backend for SimpleBackend {
         let mut hasher = Blake2b512::new();
         let mut buff: Vec<u8> = vec![0; 1 << 14];
         loop {
-            let bytes_read = contents.read(&mut buff).map_err(to_other_err)?;
+            let bytes_read = contents.read(&mut buff).await.map_err(to_other_err)?;
             if bytes_read == 0 {
                 break;
             }
@@ -236,6 +253,24 @@ impl Backend for SimpleBackend {
         persist_content_addressed_temp_file(temp_file, self.symlink_path(&id))
             .map_err(to_other_err)?;
         Ok(id)
+    }
+
+    async fn read_copy(&self, _id: &CopyId) -> BackendResult<CopyHistory> {
+        Err(BackendError::Unsupported(
+            "The simple backend doesn't support copies".to_string(),
+        ))
+    }
+
+    async fn write_copy(&self, _contents: &CopyHistory) -> BackendResult<CopyId> {
+        Err(BackendError::Unsupported(
+            "The simple backend doesn't support copies".to_string(),
+        ))
+    }
+
+    async fn get_related_copies(&self, _copy_id: &CopyId) -> BackendResult<Vec<CopyHistory>> {
+        Err(BackendError::Unsupported(
+            "The simple backend doesn't support copies".to_string(),
+        ))
     }
 
     async fn read_tree(&self, _path: &RepoPath, id: &TreeId) -> BackendResult<Tree> {
@@ -432,11 +467,16 @@ fn tree_from_proto(proto: crate::protos::simple_store::Tree) -> Tree {
 fn tree_value_to_proto(value: &TreeValue) -> crate::protos::simple_store::TreeValue {
     let mut proto = crate::protos::simple_store::TreeValue::default();
     match value {
-        TreeValue::File { id, executable } => {
+        TreeValue::File {
+            id,
+            executable,
+            copy_id,
+        } => {
             proto.value = Some(crate::protos::simple_store::tree_value::Value::File(
                 crate::protos::simple_store::tree_value::File {
                     id: id.to_bytes(),
                     executable: *executable,
+                    copy_id: copy_id.to_bytes(),
                 },
             ));
         }
@@ -468,10 +508,15 @@ fn tree_value_from_proto(proto: crate::protos::simple_store::TreeValue) -> TreeV
             TreeValue::Tree(TreeId::new(id))
         }
         crate::protos::simple_store::tree_value::Value::File(
-            crate::protos::simple_store::tree_value::File { id, executable, .. },
+            crate::protos::simple_store::tree_value::File {
+                id,
+                executable,
+                copy_id,
+            },
         ) => TreeValue::File {
             id: FileId::new(id),
             executable,
+            copy_id: CopyId::new(copy_id),
         },
         crate::protos::simple_store::tree_value::Value::SymlinkId(id) => {
             TreeValue::Symlink(SymlinkId::new(id))

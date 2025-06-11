@@ -19,7 +19,7 @@ jobs:
     strategy:
       fail-fast: ${{ github.event_name == 'merge_group' }}
       matrix:
-        build: [linux-x86_64-gnu, linux-aarch64-gnu, macos-x86_64, macos-aarch64, windows-x86_64]
+        build: [linux-x86_64-gnu, linux-aarch64-gnu, macos-x86_64, macos-aarch64, windows-x86_64, windows-aarch64]
         include:
         - build: linux-x86_64-gnu
           os: ubuntu-24.04
@@ -35,6 +35,9 @@ jobs:
           cargo_flags: ""
         - build: windows-x86_64
           os: windows-2022
+          cargo_flags: ""
+        - build: windows-aarch64
+          os: windows-11-arm
           cargo_flags: ""
     runs-on: ${{ matrix.os }}
 
@@ -55,17 +58,17 @@ jobs:
       with:
         persist-credentials: false
     - name: Set up Windows Builders
-      if: startswith(matrix.os, 'windows')
+      if: startswith(matrix.os, 'windows-x86_64') # FIXME: aarch64 doesn't have D:\ yet
       uses: ./.github/actions/setup-windows
     - name: Install Rust
       uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b
       with:
         toolchain: 1.84
-    - uses: taiki-e/install-action@83254c543806f3224380bf1001d6fac8feaf2d0b
+    - uses: taiki-e/install-action@92f69c195229fe62d58b4d697ab4bc75def98e76
       with:
         tool: nextest,taplo-cli
     - name: Install mold
-      uses: rui314/setup-mold@e16410e7f8d9e167b74ad5697a9089a35126eb50
+      uses: rui314/setup-mold@b3958095189f34b95d402a680b6e96b7f194f7b9
       with:
         make-default: false
     - name: Build
@@ -197,7 +200,7 @@ jobs:
         with:
           python-version: 3.11
       - name: Install uv
-        uses: astral-sh/setup-uv@6b9c6063abd6010835644d4c2e1bef4cf5cd0fca
+        uses: astral-sh/setup-uv@f0ec1fc3b38f5e7cd731bb6ce540c5af426746bb
         with:
           # If you bump the version, also update docs/contributing.md
           # and all other workflows that install uv
@@ -238,7 +241,7 @@ jobs:
         with:
           python-version: 3.11
       - name: Install uv
-        uses: astral-sh/setup-uv@6b9c6063abd6010835644d4c2e1bef4cf5cd0fca
+        uses: astral-sh/setup-uv@f0ec1fc3b38f5e7cd731bb6ce540c5af426746bb
         with:
           # If you bump the version, also update docs/contributing.md
           # and all other workflows that install uv
@@ -255,7 +258,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Install uv
-        uses: astral-sh/setup-uv@6b9c6063abd6010835644d4c2e1bef4cf5cd0fca
+        uses: astral-sh/setup-uv@f0ec1fc3b38f5e7cd731bb6ce540c5af426746bb
       # 'only-managed' means that uv will always download Python, even
       # if the runner happens to provide a compatible version
       - name: Check that `mkdocs` can build the docs
@@ -273,7 +276,7 @@ jobs:
           persist-credentials: false
 
       - name: Install the latest version of uv
-        uses: astral-sh/setup-uv@6b9c6063abd6010835644d4c2e1bef4cf5cd0fca
+        uses: astral-sh/setup-uv@f0ec1fc3b38f5e7cd731bb6ce540c5af426746bb
 
       - name: Run zizmor
         run: uvx zizmor --format sarif . > results.sarif
@@ -281,7 +284,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload SARIF file
-        uses: github/codeql-action/upload-sarif@60168efe1c415ce0f5521ea06d5c2062adbeed1b
+        uses: github/codeql-action/upload-sarif@fca7ace96b7d713c7035871441bd52efbe39e27e
         with:
           sarif_file: results.sarif
           category: zizmor

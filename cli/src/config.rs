@@ -287,8 +287,8 @@ impl UnresolvedConfigEnv {
                 Self::warn_for_deprecated_path(
                     ui,
                     path.as_path(),
-                    "~/Library/Application Support",
-                    "~/.config",
+                    "~/Library/Application Support/jj",
+                    "~/.config/jj",
                 );
                 paths.push(path);
             }
@@ -298,8 +298,8 @@ impl UnresolvedConfigEnv {
                 Self::warn_for_deprecated_path(
                     ui,
                     path.as_path(),
-                    "~/Library/Application Support",
-                    "~/.config",
+                    "~/Library/Application Support/jj",
+                    "~/.config/jj",
                 );
                 paths.push(path);
             }
@@ -346,6 +346,10 @@ impl ConfigEnv {
                     // note that etcetera calls Library/Application Support the "data dir",
                     // Library/Preferences is supposed to be exclusively plists
                     s.data_dir()
+                })
+                .filter(|data_dir| {
+                    // User might've purposefully set their config dir to the deprecated one
+                    Some(data_dir) != config_dir.as_ref()
                 })
         } else {
             None
@@ -726,6 +730,17 @@ pub fn default_config_migrations() -> Vec<ConfigMigrationRule> {
                 Ok(format!(r#""{escaped}""#).into())
             },
         ),
+        // TODO: Delete in jj 0.36+
+        ConfigMigrationRule::rename_value("ui.diff.tool", "ui.diff-formatter"),
+        // TODO: Delete in jj 0.36+
+        ConfigMigrationRule::rename_update_value(
+            "ui.diff.format",
+            "ui.diff-formatter",
+            |old_value| {
+                let value = old_value.as_str().ok_or("expected a string")?;
+                Ok(format!(":{value}").into())
+            },
+        ),
     ]
 }
 
@@ -765,6 +780,17 @@ impl CommandNameAndArgs {
                 env: _,
                 command: cmd,
             } => (Cow::Borrowed(&cmd.0[0]), Cow::Borrowed(&cmd.0[1..])),
+        }
+    }
+
+    /// Returns command string only if the underlying type is a string.
+    ///
+    /// Use this to parse enum strings such as `":builtin"`, which can be
+    /// escaped as `[":builtin"]`.
+    pub fn as_str(&self) -> Option<&str> {
+        match self {
+            CommandNameAndArgs::String(s) => Some(s),
+            CommandNameAndArgs::Vec(_) | CommandNameAndArgs::Structured { .. } => None,
         }
     }
 

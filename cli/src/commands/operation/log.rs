@@ -136,11 +136,10 @@ fn do_op_log(
         };
         template = workspace_env
             .parse_template(ui, &language, &text)?
-            .labeled("operation")
-            .labeled("op_log");
+            .labeled(["op_log", "operation"]);
         op_node_template = workspace_env
             .parse_template(ui, &language, &get_node_template(graph_style, settings)?)?
-            .labeled("node");
+            .labeled(["op_log", "operation", "node"]);
     }
 
     let diff_formats = diff_formats_for_log(settings, &args.diff_format, args.patch)?;
@@ -159,7 +158,9 @@ fn do_op_log(
             let commit_summary_template = {
                 let language =
                     workspace_env.commit_template_language(repo.as_ref(), &id_prefix_context);
-                workspace_env.parse_template(ui, &language, &template_text)?
+                workspace_env
+                    .parse_template(ui, &language, &template_text)?
+                    .labeled(["op_log", "commit"])
             };
             let path_converter = workspace_env.path_converter();
             let conflict_marker_style = workspace_env.conflict_marker_style();

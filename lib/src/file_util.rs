@@ -17,13 +17,20 @@
 use std::fs;
 use std::fs::File;
 use std::io;
+use std::io::Read;
+use std::io::Write;
 use std::path::Component;
 use std::path::Path;
 use std::path::PathBuf;
+use std::pin::Pin;
+use std::task::Poll;
 
 use tempfile::NamedTempFile;
 use tempfile::PersistError;
 use thiserror::Error;
+use tokio::io::AsyncRead;
+use tokio::io::AsyncReadExt as _;
+use tokio::io::ReadBuf;
 
 pub use self::platform::*;
 
@@ -162,6 +169,52 @@ pub fn persist_content_addressed_temp_file<P: AsRef<Path>>(
     }
 }
 
+/// Reads from an async source and writes to a sync destination. Does not spawn
+/// a task, so writes will block.
+pub async fn copy_async_to_sync<R: AsyncRead, W: Write + ?Sized>(
+    reader: R,
+    writer: &mut W,
+) -> io::Result<usize> {
+    let mut buf = vec![0; 16 << 10];
+    let mut total_written_bytes = 0;
+
+    let mut reader = std::pin::pin!(reader);
+    loop {
+        let written_bytes = reader.read(&mut buf).await?;
+        if written_bytes == 0 {
+            return Ok(total_written_bytes);
+        }
+        writer.write_all(&buf[0..written_bytes])?;
+        total_written_bytes += written_bytes;
+    }
+}
+
+/// `AsyncRead`` implementation backed by a `Read`. It is not actually async;
+/// the goal is simply to avoid reading the full contents from the `Read` into
+/// memory.
+pub struct BlockingAsyncReader<R> {
+    reader: R,
+}
+
+impl<R: Read + Unpin> BlockingAsyncReader<R> {
+    /// Creates a new `BlockingAsyncReader`
+    pub fn new(reader: R) -> Self {
+        Self { reader }
+    }
+}
+
+impl<R: Read + Unpin> AsyncRead for BlockingAsyncReader<R> {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        let num_bytes_read = self.reader.read(buf.initialize_unfilled())?;
+        buf.advance(num_bytes_read);
+        Poll::Ready(Ok(()))
+    }
+}
+
 #[cfg(unix)]
 mod platform {
     use std::io;
@@ -210,8 +263,11 @@ mod platform {
 
 #[cfg(test)]
 mod tests {
+    use std::io::Cursor;
     use std::io::Write as _;
 
+    use itertools::Itertools as _;
+    use pollster::FutureExt as _;
     use test_case::test_case;
 
     use super::*;
@@ -255,5 +311,56 @@ mod tests {
         }
 
         assert!(persist_content_addressed_temp_file(temp_file, &target).is_ok());
+    }
+
+    #[test]
+    fn test_copy_async_to_sync_small() {
+        let input = b"hello";
+        let mut output = vec![];
+
+        let result = copy_async_to_sync(Cursor::new(&input), &mut output).block_on();
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 5);
+        assert_eq!(output, input);
+    }
+
+    #[test]
+    fn test_copy_async_to_sync_large() {
+        // More than 1 buffer worth of data
+        let input = (0..100u8).cycle().take(40000).collect_vec();
+        let mut output = vec![];
+
+        let result = copy_async_to_sync(Cursor::new(&input), &mut output).block_on();
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 40000);
+        assert_eq!(output, input);
+    }
+
+    #[test]
+    fn test_blocking_async_reader() {
+        let input = b"hello";
+        let sync_reader = Cursor::new(&input);
+        let mut async_reader = BlockingAsyncReader::new(sync_reader);
+
+        let mut buf = [0u8; 3];
+        let num_bytes_read = async_reader.read(&mut buf).block_on().unwrap();
+        assert_eq!(num_bytes_read, 3);
+        assert_eq!(&buf, &input[0..3]);
+
+        let num_bytes_read = async_reader.read(&mut buf).block_on().unwrap();
+        assert_eq!(num_bytes_read, 2);
+        assert_eq!(&buf[0..2], &input[3..5]);
+    }
+
+    #[test]
+    fn test_blocking_async_reader_read_to_end() {
+        let input = b"hello";
+        let sync_reader = Cursor::new(&input);
+        let mut async_reader = BlockingAsyncReader::new(sync_reader);
+
+        let mut buf = vec![];
+        let num_bytes_read = async_reader.read_to_end(&mut buf).block_on().unwrap();
+        assert_eq!(num_bytes_read, input.len());
+        assert_eq!(&buf, &input);
     }
 }

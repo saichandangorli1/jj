@@ -1388,7 +1388,11 @@ fn build_index_from_merged_tree(
             };
 
             let (id, mode) = match entry {
-                TreeValue::File { id, executable } => {
+                TreeValue::File {
+                    id,
+                    executable,
+                    copy_id: _,
+                } => {
                     if *executable {
                         (id.as_bytes(), gix::index::entry::Mode::FILE_EXECUTABLE)
                     } else {
@@ -1521,7 +1525,11 @@ async fn update_intent_to_add_impl(
         let (before, after) = values?;
         if before.is_absent() {
             let executable = match after.as_normal() {
-                Some(TreeValue::File { id: _, executable }) => *executable,
+                Some(TreeValue::File {
+                    id: _,
+                    executable,
+                    copy_id: _,
+                }) => *executable,
                 Some(TreeValue::Symlink(_)) => false,
                 _ => {
                     continue;
@@ -1854,9 +1862,10 @@ fn remove_remote_git_refs(
     git_repo: &mut gix::Repository,
     remote: &RemoteName,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+    let prefix = format!("refs/remotes/{remote}/", remote = remote.as_str());
     let edits: Vec<_> = git_repo
         .references()?
-        .prefixed(format!("refs/remotes/{remote}/", remote = remote.as_str()))?
+        .prefixed(prefix.as_str())?
         .map_ok(remove_ref)
         .try_collect()?;
     git_repo.edit_references(edits)?;
@@ -1952,7 +1961,7 @@ fn rename_remote_git_refs(
 
     let edits: Vec<_> = git_repo
         .references()?
-        .prefixed(old_prefix.clone())?
+        .prefixed(old_prefix.as_str())?
         .map_ok(|old_ref| {
             let new_name = BString::new(
                 [

@@ -67,7 +67,9 @@ pub fn cmd_op_show(
     let commit_summary_template = {
         let language = workspace_env.commit_template_language(repo.as_ref(), &id_prefix_context);
         let text = settings.get_string("templates.commit_summary")?;
-        workspace_env.parse_template(ui, &language, &text)?
+        workspace_env
+            .parse_template(ui, &language, &text)?
+            .labeled(["op_show", "commit"])
     };
 
     let graph_style = GraphStyle::from_settings(settings)?;
@@ -91,7 +93,7 @@ pub fn cmd_op_show(
         let text = settings.get_string("templates.op_log")?;
         workspace_command
             .parse_operation_template(ui, &text)?
-            .labeled("operation")
+            .labeled(["op_show", "operation"])
     };
 
     ui.request_pager();
